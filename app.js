@@ -25,17 +25,26 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 
+// One-time move from the old 'earful:' prefix, so the rename doesn't sign anyone out.
+try {
+  for (const k of Object.keys(localStorage)) {
+    if (!k.startsWith('earful:')) continue;
+    const next = 'putio-audiobooks:' + k.slice(7);
+    if (localStorage.getItem(next) == null) localStorage.setItem(next, localStorage.getItem(k));
+    localStorage.removeItem(k);
+  }
+} catch {}
 const store = {
   get(key, fallback) {
     try {
-      const v = localStorage.getItem('earful:' + key);
+      const v = localStorage.getItem('putio-audiobooks:' + key);
       return v == null ? fallback : JSON.parse(v);
     } catch { return fallback; }
   },
   set(key, value) {
-    try { localStorage.setItem('earful:' + key, JSON.stringify(value)); } catch {}
+    try { localStorage.setItem('putio-audiobooks:' + key, JSON.stringify(value)); } catch {}
   },
-  del(key) { try { localStorage.removeItem('earful:' + key); } catch {} },
+  del(key) { try { localStorage.removeItem('putio-audiobooks:' + key); } catch {} },
 };
 
 const ICONS = {
@@ -154,7 +163,7 @@ function showConnect() {
 
   app.replaceChildren(
     h('div', { class: 'connect' },
-      h('div', { class: 'brand' }, h('img', { src: 'icons/icon.svg', alt: '', width: 56, height: 56 }), h('span', {}, 'Earful')),
+      h('div', { class: 'brand' }, h('img', { src: 'icons/icon.svg', alt: '', width: 56, height: 56 }), h('span', {}, 'put.io Audiobooks')),
       h('h1', {}, 'Your put.io audiobooks, played like audiobooks.'),
       h('p', { class: 'lede' }, 'Chapters, speed, a sleep timer, and it remembers your place on every device.'),
       CLIENT_ID
@@ -172,7 +181,7 @@ function showConnect() {
               h('summary', {}, 'Use an OAuth token instead'),
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'Earful talks to put.io directly from this device. Nothing passes through another server.'))
+      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Nothing passes through another server.'))
   );
 }
 
@@ -367,7 +376,7 @@ function showLibrary() {
   search.addEventListener('input', () => { query = search.value; renderLibrary(); });
   app.replaceChildren(
     h('header', { class: 'bar' },
-      h('div', { class: 'wordmark' }, 'Earful'),
+      h('div', { class: 'wordmark' }, 'put.io Audiobooks'),
       h('span', { class: 'spacer grow' }),
       iconBtn('more', 'Settings', openSettings)),
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
@@ -886,7 +895,7 @@ function updateMediaSession() {
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: list ? list[chapterIndex()].title : cur.book.title,
-      artist: cur.book.author || 'Earful',
+      artist: cur.book.author || 'put.io Audiobooks',
       album: cur.book.title,
       artwork: art,
     });

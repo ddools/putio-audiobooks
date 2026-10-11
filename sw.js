@@ -1,6 +1,6 @@
-// Caches the app shell so Earful opens instantly and offline.
+// Caches the app shell so the app opens instantly and offline.
 // Audio always streams straight from put.io and is never cached here.
-const CACHE = 'earful-shell-v1';
+const CACHE = 'putio-audiobooks-shell-v2';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'api.js', 'm4b.js', 'config.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',

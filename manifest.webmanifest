@@ -1,13 +1,13 @@
 {
-  "name": "Earful",
-  "short_name": "Earful",
+  "name": "put.io Audiobooks",
+  "short_name": "Audiobooks",
   "description": "An audiobook player for your put.io files.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#151210",
-  "theme_color": "#151210",
+  "background_color": "#141414",
+  "theme_color": "#141414",
   "categories": ["books", "music", "entertainment"],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },

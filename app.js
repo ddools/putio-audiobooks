@@ -305,13 +305,15 @@ async function rescan() {
   seekArt();
 }
 
-// One automatic cover search for each book put.io has no image for. book.sought marks the attempt,
+// After a scan: read the tags of every M4B first, so the cover search runs on real titles.
+// Then one automatic cover search for each book put.io has no image for. book.sought marks the attempt,
 // hit or miss, so a book is never searched twice; the picker stays for wrong guesses.
 let seeking = false;
 async function seekArt() {
   if (seeking) return;
   seeking = true;
   let book;
+  while (api.hasToken() && navigator.onLine && (book = library.find(wantsTags))) await loadChapters(book);
   while (api.hasToken() && (book = library.find((b) => !b.cover && !b.sought && b.art === undefined))) {
     const { id } = book;
     const term = coverTerm(book);
@@ -476,7 +478,10 @@ function showLibrary() {
         () => { settings.list = !settings.list; saveSettings(); showLibrary(); }),
       iconBtn('more', 'Settings', openSettings)),
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
-    h('div', { id: 'shelf' })
+    h('div', { id: 'shelf' }),
+    h('footer', { class: 'fine foot' },
+      h('a', { href: 'https://www.nytimes.com/books/best-sellers/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'),
+      h('a', { href: 'https://chill.institute', target: '_blank', rel: 'noopener' }, 'chill.institute'))
   );
   renderLibrary();
 }
@@ -765,9 +770,10 @@ function setSleep(next) {
 
 /* ---------- M4B chapters ---------- */
 
+const wantsTags = (book) => book.tracks.length === 1 && /\.(m4b|m4a)$/i.test(book.tracks[0].name) && !book.chapters && !book._tried;
 async function loadChapters(book) {
   const file = book.tracks[0];
-  if (book.tracks.length !== 1 || !/\.(m4b|m4a)$/i.test(file.name) || book.chapters || book._tried) return;
+  if (!wantsTags(book)) return;
   book._tried = true;
   try {
     const info = await parseM4b(httpReader(await getUrl(file.id), file.size));

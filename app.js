@@ -74,7 +74,6 @@ const ICONS = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 15.5l-4.5-4.5-8 8"/>',
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
@@ -401,6 +400,7 @@ function openCoverPicker(book) {
 /* ---------- library view ---------- */
 
 let query = '';
+let filter = 'all';
 let showHidden = false;
 
 function coverEl(book) {
@@ -437,7 +437,7 @@ function bookCard(book) {
     h('div', { class: 'book-tools' },
       mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
       mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
-      mark('image', 'Cover art', () => openCoverPicker(book))));
+      mark('more', 'More', () => openBookMenu(book))));
 }
 
 function showLibrary() {
@@ -472,8 +472,10 @@ function renderLibrary() {
   const hiddenCount = library.filter((b) => marks.hidden.has(b.id)).length;
   if (!hiddenCount) showHidden = false;
   const shown = showHidden ? library : library.filter((b) => !marks.hidden.has(b.id));
+  const status = (b) => (positions[b.id]?.done ? 'done' : positions[b.id]?.p > 0.005 ? 'going' : 'new');
   // Starred first; sort is stable, so each group keeps its title order.
   const match = shown.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q))
+    .filter((b) => filter === 'all' || (filter === 'starred' ? marks.starred.has(b.id) : status(b) === filter))
     .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id));
   const going = q ? [] : shown
     .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
@@ -482,12 +484,28 @@ function renderLibrary() {
   // Native replaceChildren prints null as text, unlike h().
   shelf.replaceChildren(
     ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map(bookCard))] : []),
-    h('h2', { class: 'section' }, q ? `${match.length} found` : `All books`,
+    h('h2', { class: 'section' }, q || filter !== 'all' ? `${match.length} found` : `All books`,
       scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${shown.length}`),
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
         showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null),
+    h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred']].map(([key, label]) =>
+      h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
     match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
   );
+}
+
+function openBookMenu(book) {
+  const p = positions[book.id];
+  sheet(book.title, (close) => [
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Progress'), h('small', {}, progressLabel(book) || 'Not started')),
+      h('span', { class: 'row' },
+        p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, 'Finished'),
+        p?.done || p?.p > 0 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, 'Start over') : null)),
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Cover art'), h('small', {}, 'Search for a different cover')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, 'Choose')),
+  ]);
 }
 
 function openSettings() {
@@ -741,6 +759,14 @@ function savePosition(force) {
 function pushPosition(bookId) {
   lastPush = Date.now();
   api.setConfig('pos_' + bookId, positions[bookId]).catch(() => {});
+}
+// Set by hand from the book menu. A reset is stored, not deleted, so it wins over other devices.
+function setProgress(book, done) {
+  if (cur?.book.id === book.id) stopPlayback();
+  positions[book.id] = { t: 0, s: 0, at: Date.now(), p: done ? 1 : 0, ...(done && { done: true }) };
+  savePositions();
+  pushPosition(book.id);
+  renderLibrary();
 }
 async function pullPositions() {
   if (!api.hasToken()) return;

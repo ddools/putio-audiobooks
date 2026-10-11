@@ -101,7 +101,8 @@ input::placeholder { color: var(--muted); }
 }
 .spacer { width: 44px; flex: none; }
 .spacer.grow { flex: 1; width: auto; }
-.wordmark { font: 700 22px/1 var(--sans); letter-spacing: -0.02em; }
+.wordmark { display: flex; align-items: center; gap: 8px; font: 700 22px/1 var(--sans); letter-spacing: -0.02em; }
+.wordmark img { border-radius: 7px; }
 .bar-title { flex: 1; min-width: 0; text-align: center; display: grid; }
 .bar-title small { color: var(--muted); font-size: 12px; }
 .bar-title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -127,6 +128,7 @@ input::placeholder { color: var(--muted); }
 .connect { max-width: 440px; margin: 0 auto; padding: 12vh 4px 24px; display: grid; gap: 20px; }
 .brand { display: flex; align-items: center; gap: 12px; font: 700 24px/1 var(--sans); letter-spacing: -0.02em; }
 .brand img { border-radius: 14px; }
+.connect .art { width: 100%; height: auto; }
 .connect h1 { font: 600 clamp(30px, 8vw, 40px)/1.1 var(--sans); letter-spacing: -0.015em; text-wrap: balance; }
 .lede { color: var(--muted); font-size: 17px; }
 .setup { display: grid; gap: 16px; }

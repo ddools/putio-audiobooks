@@ -3,6 +3,7 @@ import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
 import * as offline from './offline.js';
+import { byName, collator, scan, trackTitle } from './scan.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -12,12 +13,6 @@ const CLIENT_ID = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '' : BA
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-// "Book I" and "Book 1" should sort together, so standalone roman numerals count as numbers.
-const ROMAN = { I: 1, V: 5, X: 10 };
-const unroman = (s) => s.replace(/\b[IVX]+\b/g, (r) =>
-  [...r].reduce((n, c, i) => n + (ROMAN[c] < ROMAN[r[i + 1]] ? -ROMAN[c] : ROMAN[c]), 0));
-const byName = (a, b) => collator.compare(unroman(a.name), unroman(b.name));
 
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
@@ -74,7 +69,6 @@ const ICONS = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
-  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
@@ -92,10 +86,9 @@ function fmt(sec) {
   return hrs ? `${hrs}:${String(min).padStart(2, '0')}:${s}` : `${min}:${s}`;
 }
 function fmtLong(sec) {
-  sec = Math.max(0, Math.round(sec || 0));
-  const hrs = Math.floor(sec / 3600);
-  const min = Math.round((sec % 3600) / 60);
-  if (hrs && min === 60) return `${hrs + 1}h`;
+  const m = Math.round(Math.max(0, sec || 0) / 60);
+  const hrs = Math.floor(m / 60);
+  const min = m % 60;
   if (hrs) return min ? `${hrs}h ${min}m` : `${hrs}h`;
   return min ? `${min}m` : 'under a minute';
 }
@@ -147,7 +140,10 @@ function toggleMark(kind, id) {
   markAt[id] = Date.now();
   saveMarks();
   pushMark(id);
+  const card = document.activeElement?.closest('[data-book]');
+  const at = card && { id: card.dataset.book, strip: !!card.closest('.strip'), i: [...card.querySelectorAll('button')].indexOf(document.activeElement) };
   renderLibrary();
+  if (at) $('#shelf')?.querySelectorAll(`${at.strip ? '.strip' : '.grid'} [data-book="${CSS.escape(at.id)}"] button`)[at.i]?.focus();
 }
 
 const audio = $('#audio');
@@ -177,6 +173,7 @@ function showConnect() {
     if (!id) { idInput.focus(); return toast('Enter your Client ID first.'); }
     settings.clientId = id;
     saveSettings();
+    store.set('connecting', true);
     location.href = api.authUrl(id, redirectUri);
   };
   const useToken = async () => {
@@ -196,6 +193,7 @@ function showConnect() {
   app.replaceChildren(
     h('div', { class: 'connect' },
       h('div', { class: 'brand' }, h('img', { src: 'icons/icon.svg', alt: '', width: 56, height: 56 }), h('span', {}, 'put.io Audiobooks')),
+      h('img', { class: 'art', src: 'icons/connect-art.svg', alt: '', width: 312, height: 88 }),
       h('h1', {}, 'Your put.io audiobooks, played like audiobooks.'),
       h('p', { class: 'lede' }, 'Chapters, speed, a sleep timer, and it remembers your place on every device.'),
       CLIENT_ID
@@ -266,91 +264,15 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
 
 /* ---------- library scan ---------- */
 
-const AUDIO_EXT = /\.(mp3|m4b|m4a|aac|ogg|oga|opus|flac|wav)$/i;
-const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
-const DISC_DIR = /^(cd|disc|disk|part|volume|vol)[\s._-]*\d+$/i;
-const MAX_DEPTH = 4;
-
-const stripExt = (name) => name.replace(/\.[a-z0-9]{2,4}$/i, '');
-function tidy(name) {
-  let s = stripExt(name).replace(/_/g, ' ');
-  if (!/\s/.test(s)) s = s.replace(/\./g, ' ');
-  const bare = s.replace(/\s*[\[(][^\])]*[\])]/g, '').trim();
-  return (bare || s).replace(/\s+/g, ' ').trim();
-}
-function trackTitle(name, index) {
-  const s = tidy(name).replace(/^\d+\s*[-._)]*\s*/, '').trim();
-  return s && !/^\d+$/.test(s) ? s : `Part ${index + 1}`;
-}
-function pickCover(files) {
-  const images = files.filter((f) => IMAGE_EXT.test(f.name) && f.screenshot);
-  const named = images.find((f) => /cover|folder|front/i.test(f.name));
-  return (named || images[0])?.screenshot || null;
-}
-function makeBook(id, rawTitle, rawAuthor, files, cover) {
-  let title = tidy(rawTitle);
-  let author = rawAuthor ? tidy(rawAuthor) : '';
-  if (!author && title.includes(' - ')) {
-    const cut = title.indexOf(' - ');
-    author = title.slice(0, cut).trim();
-    title = title.slice(cut + 3).trim();
-  }
-  return {
-    id, title, author,
-    cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
-    tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
-    added: files.reduce((m, f) => (f.created_at > m ? f.created_at : m), ''),
-  };
-}
-
-async function pool(items, limit, fn) {
-  const queue = [...items];
-  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    while (queue.length) await fn(queue.shift());
-  }));
-}
-
-async function scanFolder(folder, parentName, depth, out) {
-  const isRoot = depth === 0;
-  const { files } = await api.listFiles(folder.id);
-  const dirs = files.filter((f) => f.file_type === 'FOLDER');
-  const discs = isRoot ? [] : dirs.filter((d) => DISC_DIR.test(d.name)).sort(byName);
-  let cover = pickCover(files);
-  let tracks = files.filter((f) => f.file_type !== 'FOLDER' && AUDIO_EXT.test(f.name)).sort(byName);
-  for (const disc of discs) {
-    const sub = (await api.listFiles(disc.id)).files;
-    tracks = tracks.concat(sub.filter((f) => AUDIO_EXT.test(f.name)).sort(byName));
-    cover = cover || pickCover(sub);
-  }
-
-  if (isRoot) {
-    for (const f of tracks) out.push(makeBook('f' + f.id, f.name, '', [f], null));
-  } else if (tracks.length) {
-    // MP3s (and friends) in one folder are one book. Each M4B is its own
-    // book, unless they are clearly numbered parts of the same thing.
-    const m4bs = tracks.filter((f) => /\.m4b$/i.test(f.name));
-    const rest = tracks.filter((f) => !/\.m4b$/i.test(f.name));
-    const numberedParts = m4bs.length > 1 && new Set(m4bs.map((f) => f.name.toLowerCase().replace(/\d+/g, '#'))).size === 1;
-    if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover));
-    if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover));
-    else if (!rest.length && m4bs.length === 1) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover));
-    else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover));
-  }
-
-  if (depth < MAX_DEPTH) {
-    const deeper = dirs.filter((d) => !discs.includes(d));
-    await pool(deeper, 4, (d) => scanFolder(d, isRoot ? '' : folder.name, depth + 1, out));
-  }
-}
-
 let scanning = false;
 async function rescan() {
   if (scanning || !settings.root) return;
   scanning = true;
+  const root = settings.root;
   renderLibrary();
   try {
-    const found = [];
-    await scanFolder(settings.root, '', 0, found);
+    const found = await scan(root, api.listFiles);
+    if (settings.root !== root) { scanning = false; return rescan(); } // the folder changed mid-scan
     const old = new Map(library.map((b) => [b.id, b]));
     for (const book of found) {
       const prev = old.get(book.id);
@@ -377,11 +299,12 @@ async function rescan() {
 
 // book.art is a cover picked by hand: a URL, or null for "no cover". Unset means put.io's own image.
 function setArt(book, art) {
+  book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
   if (art === undefined) { delete book.art; book.cover = null; rescan(); } // the scan puts put.io's image back
   else Object.assign(book, { art, cover: art });
   saveLibrary();
   renderLibrary();
-  if (cur?.book === book) { refreshPlayer(); updateMediaSession(); }
+  if (cur?.book.id === book.id) { refreshPlayer(); updateMediaSession(); }
 }
 
 function openCoverPicker(book) {
@@ -459,7 +382,7 @@ async function startDownload(book) {
   renderLibrary();
   loadChapters(book); // read them while put.io is in reach
   try {
-    await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; renderLibrary(); } }, job.ctl.signal);
+    await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; refreshCard(library.find((b) => b.id === book.id) || book); } }, job.ctl.signal);
     toast(`“${book.title}” is ready to play offline.`);
   } catch (err) {
     // A cancelled download is thrown away; a failed one keeps its finished tracks so it can resume.
@@ -482,7 +405,7 @@ function bookCard(book, listRow) {
   const mark = (name, label, onclick, cls = '') =>
     h('button', { class: 'mark ' + cls, type: 'button', 'aria-label': `${label}: ${book.title}`, title: label, onclick, html: icon(name) });
   const flip = (kind) => () => toggleMark(kind, book.id);
-  return h('div', { class: 'book' + (hidden ? ' is-hidden' : '') },
+  return h('div', { class: 'book' + (hidden ? ' is-hidden' : ''), 'data-book': book.id },
     h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
       coverEl(book),
       h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
@@ -494,13 +417,24 @@ function bookCard(book, listRow) {
       mark('more', 'More', () => openBookMenu(book))));
 }
 
+// Swap one book's cards in place, so keyboard focus and the strip's scroll survive.
+function refreshCard(book) {
+  for (const old of $('#shelf')?.querySelectorAll(`[data-book="${CSS.escape(book.id)}"]`) || []) {
+    const had = old.contains(document.activeElement);
+    const i = [...old.querySelectorAll('button')].indexOf(document.activeElement);
+    const fresh = bookCard(book, !!old.closest('.grid.list'));
+    old.replaceWith(fresh);
+    if (had && i >= 0) fresh.querySelectorAll('button')[i].focus();
+  }
+}
+
 function showLibrary() {
   document.body.dataset.view = 'library';
   const search = h('input', { type: 'search', placeholder: 'Search your books', value: query, 'aria-label': 'Search your books' });
   search.addEventListener('input', () => { query = search.value; renderLibrary(); });
   app.replaceChildren(
     h('header', { class: 'bar' },
-      h('div', { class: 'wordmark' }, 'put.io Audiobooks'),
+      h('div', { class: 'wordmark' }, h('img', { src: 'icons/icon.svg', alt: '', width: 28, height: 28 }), 'put.io Audiobooks'),
       h('span', { class: 'spacer grow' }),
       iconBtn(settings.list ? 'grid' : 'list', settings.list ? 'Grid view' : 'List view',
         () => { settings.list = !settings.list; saveSettings(); showLibrary(); }),
@@ -589,7 +523,7 @@ function openSettings() {
 
 /* ---------- playback engine ---------- */
 
-let cur = null;           // { book, ti, started, loaded, retries }
+let cur = null;           // { book, ti, started, loaded, retries, list }
 let pendingSeek = 0;      // where to land once the track's metadata arrives
 let lastGood = 0;         // last known position, for recovering from stream errors
 let loadTicket = 0;
@@ -620,7 +554,7 @@ const trackDuration = () => (cur?.loaded && Number.isFinite(audio.duration) ? au
 
 function chapterList() {
   const book = cur.book;
-  if (multi()) return book.tracks.map((t, i) => ({ title: trackTitle(t.name, i), track: i }));
+  if (multi()) return (cur.list?.book === book ? cur.list : cur.list = { book, items: book.tracks.map((t, i) => ({ title: trackTitle(t.name, i), track: i })) }).items;
   return book.chapters?.length > 1 ? book.chapters : null;
 }
 function chapterIndex() {
@@ -728,8 +662,7 @@ function stopPlayback() {
 function togglePlay() {
   if (!cur) return;
   if (!cur.started) {
-    const pos = startPos(cur.book);
-    loadTrack(pos.t, pos.s, true);
+    loadTrack(cur.ti, pendingSeek, true); // not startPos: a chapter picked before the first play must stick
   } else if (audio.ended && positions[cur.book.id]?.done) {
     loadTrack(0, 0, true); // finished: start the book again
   } else if (audio.paused) {
@@ -796,13 +729,14 @@ async function loadChapters(book) {
   book._tried = true;
   try {
     const info = await parseM4b(httpReader(await getUrl(file.id), file.size));
+    book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
     book.chapters = info.chapters;
     book.duration = info.duration;
     if (info.tags.album || info.tags.title) book.title = info.tags.album || info.tags.title;
     if (info.tags.artist || info.tags.albumArtist) book.author = info.tags.artist || info.tags.albumArtist;
     saveLibrary();
     renderLibrary();
-    if (cur?.book === book) { shownChapter = -1; refreshPlayer(); }
+    if (cur?.book.id === book.id) { shownChapter = -1; refreshPlayer(); }
   } catch (err) {
     console.warn('Could not read chapters for', book.title, err);
   }
@@ -866,13 +800,15 @@ async function pullPositions() {
       else { cur.ti = pos.t; pendingSeek = pos.s; refreshPlayer(); }
     }
   }
-  // Marks made before they synced have no time yet. Send them now that put.io's own have been applied.
+  // Marks made before they synced have no time yet. Stamp them now that put.io's own have been applied.
   for (const id of new Set([...marks.starred, ...marks.hidden])) {
     if (markAt[id]) continue;
     markAt[id] = Date.now();
-    pushMark(id);
     marked = true;
   }
+  // Whatever put.io lacks or holds an older copy of goes up now: sends that failed offline are not retried elsewhere.
+  for (const [id, p] of Object.entries(positions)) if (!(remote['pos_' + id]?.at >= p.at)) pushPosition(id);
+  for (const id of Object.keys(markAt)) if (!(remote['mark_' + id]?.at >= markAt[id])) pushMark(id);
   if (marked) saveMarks();
   if (changed) savePositions();
   if (changed || marked) renderLibrary();
@@ -1183,7 +1119,7 @@ addEventListener('pagehide', () => savePosition(true));
 setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
 
 addEventListener('keydown', (e) => {
-  if (!cur || e.target.closest('input, dialog')) return;
+  if (!cur || e.target.closest('input, dialog, button, a')) return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
   else if (e.code === 'ArrowLeft') skip(-settings.back);
   else if (e.code === 'ArrowRight') skip(settings.fwd);
@@ -1211,13 +1147,15 @@ function boot() {
   }
   // Coming back from put.io: the token arrives in the URL fragment.
   const fragment = new URLSearchParams(location.hash.slice(1));
-  if (fragment.get('access_token')) {
-    store.set('token', fragment.get('access_token'));
+  if (fragment.get('access_token') || fragment.get('error')) {
+    // Only accept a token this app asked for; a crafted link must not replace the session.
+    const asked = store.get('connecting');
+    store.del('connecting');
     history.replaceState(null, '', location.pathname + location.search);
-  } else if (fragment.get('error')) {
-    toast('put.io didn’t grant access.');
-    history.replaceState(null, '', location.pathname + location.search);
-  }
+    if (asked && fragment.get('access_token')) store.set('token', fragment.get('access_token'));
+    else if (asked) toast('put.io didn’t grant access.');
+  } else store.del('connecting'); // an abandoned sign-in must not leave the door open
+
   if (store.get('token')) start();
   else showConnect();
 }

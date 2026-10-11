@@ -71,6 +71,8 @@ The app talks to put.io straight from your browser. Your token, listening positi
 - `covers.js` cover art search
 - `sw.js` service worker
 - `offline.js` downloaded books
+- `scan.js` turns put.io folders into books
+- `test/` checks, run each with `node test/<name>.test.mjs`
 - `styles.css` styles
 - `config.js` put.io Client ID
 - `manifest.webmanifest` and `icons/` install metadata

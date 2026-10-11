@@ -5,12 +5,12 @@
 const BLOCK = 65536;
 
 // reader = { size, read(offset, length) -> Promise<Uint8Array> }
-export function httpReader(url, size, maxRequests = 80) {
+export function httpReader(url, size) {
   const blocks = new Map();
   let requests = 0;
 
   async function fetchRange(start, end) {
-    if (++requests > maxRequests) throw new Error('Too many range requests');
+    if (++requests > 80) throw new Error('Too many range requests');
     const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
     if (res.status !== 206) {
       try { await res.body?.cancel(); } catch {}
@@ -21,7 +21,6 @@ export function httpReader(url, size, maxRequests = 80) {
 
   return {
     size,
-    get requests() { return requests; },
     async read(offset, length) {
       const end = Math.min(size, offset + length);
       if (end <= offset) return new Uint8Array(0);
@@ -203,7 +202,7 @@ async function tags(r, udta) {
   if (!inner.some((a) => a.type === 'ilst')) inner = await kids(r, meta.body, meta.end);
   const ilst = inner.find((a) => a.type === 'ilst');
   if (!ilst) return out;
-  const want = { '©nam': 'title', '©ART': 'artist', aART: 'albumArtist', '©alb': 'album', '©wrt': 'composer' };
+  const want = { '©nam': 'title', '©ART': 'artist', aART: 'albumArtist', '©alb': 'album' };
   for (const item of await kids(r, ilst.body, ilst.end)) {
     const key = want[item.type];
     if (!key || item.end - item.body > 2048) continue;

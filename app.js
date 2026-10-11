@@ -124,7 +124,7 @@ function sheet(title, build) {
 
 /* ---------- state ---------- */
 
-const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false }, store.get('settings', {}));
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title' }, store.get('settings', {}));
 let library = store.get('library', []);
 let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
@@ -287,6 +287,7 @@ function makeBook(id, rawTitle, rawAuthor, files, cover) {
     id, title, author,
     cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
     tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
+    added: files.reduce((m, f) => (f.created_at > m ? f.created_at : m), ''),
   };
 }
 
@@ -414,14 +415,24 @@ function coverEl(book) {
   return img;
 }
 
-function progressLabel(book) {
+function progressLabel(book, withLeft) {
   const p = positions[book.id];
   if (!p) return '';
   if (p.done) return 'Finished';
-  return p.p > 0.005 ? `${Math.round(p.p * 100)}%` : '';
+  if (!(p.p > 0.005)) return '';
+  return `${Math.round(p.p * 100)}%` + (withLeft && p.left > 0 ? ` · ${fmtLong(p.left)} left` : '');
 }
 
-function bookCard(book) {
+// Applied after starred-first; the sort is stable, so ties keep title order.
+const SORTS = { title: 'Title', author: 'Author', recent: 'Recently played', added: 'Recently added' };
+const sortCmp = {
+  title: () => 0,
+  author: (a, b) => !a.author - !b.author || collator.compare(a.author, b.author),
+  recent: (a, b) => (positions[b.id]?.at || 0) - (positions[a.id]?.at || 0),
+  added: (a, b) => (b.added || '') < (a.added || '') ? -1 : (b.added || '') > (a.added || '') ? 1 : 0,
+};
+
+function bookCard(book, listRow) {
   const p = positions[book.id];
   const starred = marks.starred.has(book.id);
   const hidden = marks.hidden.has(book.id);
@@ -433,7 +444,7 @@ function bookCard(book) {
       coverEl(book),
       h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
       h('span', { class: 'book-title' }, book.title),
-      h('span', { class: 'book-sub' }, [book.author, progressLabel(book)].filter(Boolean).join(' · '))),
+      h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow)].filter(Boolean).join(' · '))),
     h('div', { class: 'book-tools' },
       mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
       mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
@@ -473,24 +484,24 @@ function renderLibrary() {
   if (!hiddenCount) showHidden = false;
   const shown = showHidden ? library : library.filter((b) => !marks.hidden.has(b.id));
   const status = (b) => (positions[b.id]?.done ? 'done' : positions[b.id]?.p > 0.005 ? 'going' : 'new');
-  // Starred first; sort is stable, so each group keeps its title order.
   const match = shown.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q))
     .filter((b) => filter === 'all' || (filter === 'starred' ? marks.starred.has(b.id) : status(b) === filter))
-    .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id));
+    .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id) || sortCmp[settings.sort](a, b));
   const going = q ? [] : shown
     .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
     .sort((a, b) => positions[b.id].at - positions[a.id].at)
     .slice(0, 6);
   // Native replaceChildren prints null as text, unlike h().
   shelf.replaceChildren(
-    ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map(bookCard))] : []),
+    ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map((b) => bookCard(b)))] : []),
     h('h2', { class: 'section' }, q || filter !== 'all' ? `${match.length} found` : `All books`,
       scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${shown.length}`),
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
-        showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null),
+        showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null,
+      h('button', { class: 'link', type: 'button', onclick: openSort }, `Sort: ${SORTS[settings.sort]}`)),
     h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred']].map(([key, label]) =>
       h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
-    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
+    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map((b) => bookCard(b, settings.list))) : h('p', { class: 'empty' }, 'Nothing matches that.')
   );
 }
 
@@ -498,7 +509,7 @@ function openBookMenu(book) {
   const p = positions[book.id];
   sheet(book.title, (close) => [
     h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Progress'), h('small', {}, progressLabel(book) || 'Not started')),
+      h('div', {}, h('strong', {}, 'Progress'), h('small', {}, progressLabel(book, true) || 'Not started')),
       h('span', { class: 'row' },
         p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, 'Finished'),
         p?.done || p?.p > 0 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, 'Start over') : null)),
@@ -506,6 +517,11 @@ function openBookMenu(book) {
       h('div', {}, h('strong', {}, 'Cover art'), h('small', {}, 'Search for a different cover')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, 'Choose')),
   ]);
+}
+
+function openSort() {
+  sheet('Sort by', (close) => h('div', { class: 'chips' }, Object.entries(SORTS).map(([key, label]) =>
+    h('button', { type: 'button', class: key === settings.sort ? 'chip on' : 'chip', onclick: () => { settings.sort = key; saveSettings(); close(); renderLibrary(); } }, label))));
 }
 
 function openSettings() {
@@ -753,6 +769,8 @@ function savePosition(force) {
   if (!force && t - lastSave < 5000) return;
   lastSave = t;
   positions[cur.book.id] = { t: cur.ti, s: Math.floor(audio.currentTime), at: t, p: +bookFraction().toFixed(4) };
+  const left = bookSecondsLeft();
+  if (left != null) positions[cur.book.id].left = Math.round(left * settings.speed);
   savePositions();
   if (force || t - lastPush > 30000) pushPosition(cur.book.id);
 }

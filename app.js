@@ -211,7 +211,7 @@ function showConnect() {
               h('summary', {}, 'Use an OAuth token instead'),
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Searching for a cover sends that book’s title to Apple and Open Library.'))
+      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'))
   );
 }
 
@@ -286,6 +286,7 @@ async function rescan() {
         Object.assign(book, { chapters: prev.chapters, duration: prev.duration, title: prev.title, author: prev.author });
       }
       if (prev?.art || prev?.art === null) Object.assign(book, { art: prev.art, cover: prev.art });
+      if (prev?.sought) book.sought = true;
     }
     found.sort((a, b) => collator.compare(a.title, b.title));
     library = found;
@@ -301,6 +302,31 @@ async function rescan() {
   }
   scanning = false;
   if (api.hasToken()) renderLibrary();
+  seekArt();
+}
+
+// One automatic cover search for each book put.io has no image for. book.sought marks the attempt,
+// hit or miss, so a book is never searched twice; the picker stays for wrong guesses.
+let seeking = false;
+async function seekArt() {
+  if (seeking) return;
+  seeking = true;
+  let book;
+  while (api.hasToken() && (book = library.find((b) => !b.cover && !b.sought && b.art === undefined))) {
+    const { id } = book;
+    const term = coverTerm(book);
+    let found;
+    try { found = term ? await searchCovers(term) : []; }
+    catch { break; } // offline, or both searches down: the next scan tries again
+    book = library.find((b) => b.id === id); // a rescan may have swapped the object meanwhile
+    if (book) {
+      book.sought = true;
+      if (found[0]) setArt(book, found[0].url);
+      else saveLibrary();
+    }
+    await new Promise((r) => setTimeout(r, 3000)); // Apple's search allows about 20 calls a minute
+  }
+  seeking = false;
 }
 
 // book.art is a cover picked by hand: a URL, or null for "no cover". Unset means put.io's own image.

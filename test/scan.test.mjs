@@ -21,6 +21,7 @@ const root = dir('Audiobooks',
   loose,
   dir('Stephen King - 11.22.63', file('book.m4b')),
   dir('Stephen King',
+    file('It.m4b'),
     dir('The Stand [Unabridged]', file('10 - Ten.mp3'), file('2 - Two.mp3'), file('notes.txt'), file('extras.zip'),
       dir('CD2', file('01.mp3')), dir('CD1', file('Track II.mp3'), file('Track I.mp3')))),
   dir('Parts', file('Dune 2.m4b'), file('Dune 1.m4b')),
@@ -48,9 +49,12 @@ assert.deepEqual(by('Parts').tracks.map((t) => t.name), ['Dune 1.m4b', 'Dune 2.m
 assert.equal(by('Emma').author, 'Mixed');
 assert.equal(by('Persuasion').author, 'Mixed');
 
+// A lone M4B beside other books' folders keeps its own name; the folder is the author, not the title.
+assert.equal(by('It').author, 'Stephen King');
+
 // Four levels down is scanned, five is not.
 assert.ok(by('L4'));
-assert.equal(books.length, 7);
+assert.equal(books.length, 8);
 
 // Archives are not books, but they are reported.
 assert.deepEqual(archives.sort(), ['Zipped Book.RAR', 'extras.zip']);

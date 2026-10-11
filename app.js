@@ -1,6 +1,7 @@
 import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID } from './config.js';
+import { findCover } from './covers.js';
 
 /* ---------- small helpers ---------- */
 
@@ -181,7 +182,7 @@ function showConnect() {
               h('summary', {}, 'Use an OAuth token instead'),
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Nothing passes through another server.'))
+      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Titles of books without a cover are sent to Apple and Open Library to find one.'))
   );
 }
 
@@ -266,6 +267,7 @@ function makeBook(id, rawTitle, rawAuthor, files, cover) {
   return {
     id, title, author,
     cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
+    weak: !cover, // no image in the folder; an audio file's own thumbnail is often blank
     tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
   };
 }
@@ -324,6 +326,10 @@ async function rescan() {
       if (prev?.chapters && prev.tracks.length === 1 && prev.tracks[0].id === book.tracks[0].id) {
         Object.assign(book, { chapters: prev.chapters, duration: prev.duration, title: prev.title, author: prev.author });
       }
+      if (prev?.art !== undefined && book.weak) {
+        book.art = prev.art;
+        if (prev.art) book.cover = prev.art;
+      }
     }
     found.sort((a, b) => collator.compare(a.title, b.title));
     library = found;
@@ -337,6 +343,23 @@ async function rescan() {
   }
   scanning = false;
   if (api.hasToken()) renderLibrary();
+  lookupCovers();
+}
+
+// book.art: undefined = not looked up yet, '' = looked and found nothing (or removed), else the URL.
+let lookingUp = false;
+async function lookupCovers() {
+  if (lookingUp) return;
+  lookingUp = true;
+  // shortcut: one at a time and stop at the first error (Apple allows ~20 searches a minute), the rest
+  // are picked up on the next launch or rescan. Add a paced queue if big libraries fill too slowly.
+  for (const book of library.filter((b) => b.weak && b.art === undefined)) {
+    try { book.art = await findCover(book); } catch { break; }
+    if (book.art) book.cover = book.art;
+    saveLibrary();
+    if (book.art) { renderLibrary(); if (cur?.book === book) { refreshPlayer(); updateMediaSession(); } }
+  }
+  lookingUp = false;
 }
 
 /* ---------- library view ---------- */
@@ -419,6 +442,13 @@ function openSettings() {
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
+    cur?.book.art ? h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Wrong cover?'), h('small', {}, `Looked up for “${cur.book.title}”`)),
+      h('button', { class: 'btn', type: 'button', onclick: () => {
+        close();
+        Object.assign(cur.book, { art: '', cover: null });
+        saveLibrary(); renderLibrary(); refreshPlayer(); updateMediaSession();
+      } }, 'Remove')) : null,
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
       h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, 'Sign out')),

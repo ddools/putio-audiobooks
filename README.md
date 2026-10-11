@@ -18,7 +18,7 @@ For a quick local try: `npx serve .` then open the localhost URL and use "Use an
 - `CD1`, `Disc 2`, `Part 3` subfolders are merged into the parent book.
 - Each `.m4b` is its own book. Chapter markers and title/author tags are read from the file with small range requests.
 - `Author/Book/` folders and `Author - Title` names both give you an author.
-- An image in the folder (`cover.jpg` preferred) becomes the cover.
+- An image in the folder (`cover.jpg` preferred) becomes the cover. Without one, the title is looked up with Apple's audiobook search, then Open Library.
 
 ## What it does
 
@@ -40,5 +40,6 @@ For a quick local try: `npx serve .` then open the localhost URL and use "Use an
 - `app.js` UI and playback
 - `api.js` put.io client
 - `m4b.js` chapter and tag reader
+- `covers.js` cover art lookup
 - `sw.js` service worker
 - `config.js` optional Client ID

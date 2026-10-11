@@ -1,7 +1,11 @@
 import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
-import { CLIENT_ID } from './config.js';
+import { CLIENT_ID as BAKED_ID } from './config.js';
 import { findCover } from './covers.js';
+
+// The baked Client ID only accepts the hosted URL as its callback. On localhost,
+// drop it so the connect screen offers a pasted Client ID or OAuth token instead.
+const CLIENT_ID = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '' : BAKED_ID;
 
 /* ---------- small helpers ---------- */
 
@@ -65,6 +69,9 @@ const ICONS = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
 };
 const icon = (name) =>
   `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -118,6 +125,13 @@ let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
 const saveLibrary = () => store.set('library', library.map(({ _tried, ...book }) => book));
 const savePositions = () => store.set('positions', positions);
+// Starred and hidden books, by id. Kept on this device only.
+const marks = { starred: new Set(store.get('starred', [])), hidden: new Set(store.get('hidden', [])) };
+function toggleMark(kind, id) {
+  if (!marks[kind].delete(id)) marks[kind].add(id);
+  store.set(kind, [...marks[kind]]);
+  renderLibrary();
+}
 
 const audio = $('#audio');
 const app = $('#app');
@@ -365,6 +379,7 @@ async function lookupCovers() {
 /* ---------- library view ---------- */
 
 let query = '';
+let showHidden = false;
 
 function coverEl(book) {
   let hash = 0;
@@ -386,11 +401,20 @@ function progressLabel(book) {
 
 function bookCard(book) {
   const p = positions[book.id];
-  return h('button', { class: 'book', type: 'button', onclick: () => openBook(book, true) },
-    coverEl(book),
-    h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
-    h('span', { class: 'book-title' }, book.title),
-    h('span', { class: 'book-sub' }, [book.author, progressLabel(book)].filter(Boolean).join(' · ')));
+  const starred = marks.starred.has(book.id);
+  const hidden = marks.hidden.has(book.id);
+  const mark = (name, label, kind, cls) =>
+    h('button', { class: 'mark ' + cls, type: 'button', 'aria-label': `${label}: ${book.title}`, title: label, 'aria-pressed': kind === 'starred' ? String(starred) : null,
+      onclick: () => toggleMark(kind, book.id), html: icon(name) });
+  return h('div', { class: 'book' + (hidden ? ' is-hidden' : '') },
+    h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
+      coverEl(book),
+      h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
+      h('span', { class: 'book-title' }, book.title),
+      h('span', { class: 'book-sub' }, [book.author, progressLabel(book)].filter(Boolean).join(' · '))),
+    h('div', { class: 'book-tools' },
+      mark('star', starred ? 'Remove star' : 'Star', 'starred', 'mark-star' + (starred ? ' on' : '')),
+      hidden ? mark('eye', 'Show again', 'hidden', 'mark-hide') : mark('eyeOff', 'Hide', 'hidden', 'mark-hide')));
 }
 
 function showLibrary() {
@@ -420,8 +444,13 @@ function renderLibrary() {
     return;
   }
   const q = query.trim().toLowerCase();
-  const match = library.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q));
-  const going = q ? [] : library
+  const hiddenCount = library.filter((b) => marks.hidden.has(b.id)).length;
+  if (!hiddenCount) showHidden = false;
+  const shown = showHidden ? library : library.filter((b) => !marks.hidden.has(b.id));
+  // Starred first; sort is stable, so each group keeps its title order.
+  const match = shown.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q))
+    .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id));
+  const going = q ? [] : shown
     .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
     .sort((a, b) => positions[b.id].at - positions[a.id].at)
     .slice(0, 6);
@@ -429,7 +458,9 @@ function renderLibrary() {
   shelf.replaceChildren(
     ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map(bookCard))] : []),
     h('h2', { class: 'section' }, q ? `${match.length} found` : `All books`,
-      scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${library.length}`)),
+      scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${shown.length}`),
+      hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
+        showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null),
     match.length ? h('div', { class: 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
   );
 }

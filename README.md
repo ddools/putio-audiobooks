@@ -18,11 +18,10 @@ The Client ID in `config.js` only works for the URL above, so your own copy need
 
 ## Run it locally
 
-1. Set `CLIENT_ID` to `''` in `config.js`. Don't commit that change.
-2. Run `npx serve .` and open the localhost URL.
-3. On the connect screen, open "Use an OAuth token instead" and paste a put.io OAuth token.
+1. Run `npx serve .` and open the localhost URL.
+2. On the connect screen, open "Use an OAuth token instead" and paste a put.io OAuth token.
 
-The token option only shows when `CLIENT_ID` is empty. The service worker only registers over HTTPS, so there is no offline shell on localhost.
+On localhost the Client ID in `config.js` is ignored, because put.io only accepts the hosted URL as its callback. The service worker only registers over HTTPS, so there is no offline shell on localhost.
 
 ## How it reads your library
 
@@ -39,6 +38,7 @@ The token option only shows when `CLIENT_ID` is empty. The service worker only r
 ## What it does
 
 - Library with search and a "Keep listening" shelf.
+- Star a book to move it to the front of the library. Hide one to take it off the shelf; "Show all" brings hidden books back into view. Both are saved on the device only.
 - Chapter list, chapter-scoped scrubber, previous/next chapter, skip back 15 / forward 30.
 - Speed from 0.5x to 3.5x in 0.05 steps, remembered.
 - Sleep timer: 5 to 60 minutes, or end of chapter.

@@ -68,7 +68,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.danger { color: var(--danger); }
-.btn:active, .chip:active, .book:active .cover { transform: scale(0.97); }
+.btn:active, .chip:active, .book-open:active .cover { transform: scale(0.97); }
 
 .icon-btn {
   width: 44px; height: 44px;
@@ -179,7 +179,16 @@ input::placeholder { color: var(--muted); }
 .strip { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 14px; overflow-x: auto; margin: 0 -16px; padding: 0 16px 4px; scrollbar-width: none; }
 .strip::-webkit-scrollbar { display: none; }
 
-.book { display: grid; gap: 6px; text-align: left; align-content: start; min-width: 0; }
+.book { min-width: 0; }
+.book.is-hidden .book-open { opacity: 0.4; }
+.book-open { display: grid; gap: 6px; text-align: left; align-content: start; width: 100%; min-width: 0; }
+.book-tools { display: flex; gap: 2px; margin: 2px 0 0 -8px; }
+.mark { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); }
+.mark:active { background: var(--raised); }
+.mark svg { width: 19px; height: 19px; }
+.mark-star.on { color: var(--accent-ink); }
+.mark-star.on svg { fill: var(--accent); }
+.section .link { float: right; font: 500 14px/1.7 var(--sans); color: var(--accent-ink); }
 .book .bar-thin { margin-top: 2px; }
 .book-title { font-weight: 600; font-size: 14px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .book-sub { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

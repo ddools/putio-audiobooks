@@ -76,6 +76,13 @@ export async function scan(root, listFiles, archives = []) {
       cover = cover || pickCover(sub);
     }
 
+    // Subfolders first: if they hold books, this folder is a shelf, not one book's own folder.
+    let shelf = false;
+    if (depth < MAX_DEPTH) {
+      const deeper = dirs.filter((d) => !discs.includes(d));
+      shelf = (await Promise.all(deeper.map((d) => scanFolder(d, isRoot ? '' : folder.name, depth + 1)))).some(Boolean);
+    }
+
     if (isRoot) {
       for (const f of tracks) out.push(makeBook('f' + f.id, f.name, '', [f], null));
     } else if (tracks.length) {
@@ -86,14 +93,10 @@ export async function scan(root, listFiles, archives = []) {
       const numberedParts = m4bs.length > 1 && new Set(m4bs.map((f) => f.name.toLowerCase().replace(/\d+/g, '#'))).size === 1;
       if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover));
       if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover));
-      else if (!rest.length && m4bs.length === 1) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover));
+      else if (!rest.length && m4bs.length === 1 && !shelf) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover));
       else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover));
     }
-
-    if (depth < MAX_DEPTH) {
-      const deeper = dirs.filter((d) => !discs.includes(d));
-      await Promise.all(deeper.map((d) => scanFolder(d, isRoot ? '' : folder.name, depth + 1)));
-    }
+    return shelf || tracks.length > 0;
   }
 
   await scanFolder(root, '', 0);

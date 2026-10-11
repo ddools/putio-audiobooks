@@ -146,6 +146,7 @@ input::placeholder { color: var(--muted); }
 .connect details .row { margin-top: 8px; }
 .fine { color: var(--muted); font-size: 13px; }
 .zipped { text-align: center; }
+.foot { display: flex; justify-content: center; gap: 20px; padding: 24px 16px; }
 
 /* ---------- folder picker ---------- */
 

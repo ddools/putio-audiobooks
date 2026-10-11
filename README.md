@@ -28,7 +28,7 @@ On localhost the Client ID in `config.js` is ignored, because put.io only accept
 - A folder of audio files is one book. Files play in natural name order. Each file is a chapter.
 - Formats: MP3, M4B, M4A, AAC, OGG, Opus, FLAC, WAV.
 - `CD1`, `Disc 2`, `Part 3`, `Vol 4` subfolders are merged into the parent book.
-- Each `.m4b` is its own book. Chapter markers and title/author tags are read from the file with small range requests. A single `.m4a` gets the same treatment.
+- Each `.m4b` is its own book. Chapter markers and title/author tags are read from the file with small range requests, in the background after a scan. A single `.m4a` gets the same treatment.
 - Several M4Bs whose names differ only by a number are treated as parts of one book.
 - An audio file sitting directly in the library folder is a book on its own.
 - `Author/Book/` folders and `Author - Title` names both give you an author.

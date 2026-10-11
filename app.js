@@ -265,14 +265,20 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
 /* ---------- library scan ---------- */
 
 let scanning = false;
+let zipped = 0; // archives the last scan passed over
+const zippedHint = () => (zipped
+  ? h('p', { class: 'fine zipped' }, `${zipped} zipped ${zipped === 1 ? 'file' : 'files'} skipped. Extract ${zipped === 1 ? 'it' : 'them'} on put.io, then rescan.`)
+  : null);
 async function rescan() {
   if (scanning || !settings.root) return;
   scanning = true;
   const root = settings.root;
   renderLibrary();
   try {
-    const found = await scan(root, api.listFiles);
+    const archives = [];
+    const found = await scan(root, api.listFiles, archives);
     if (settings.root !== root) { scanning = false; return rescan(); } // the folder changed mid-scan
+    zipped = archives.length;
     const old = new Map(library.map((b) => [b.id, b]));
     for (const book of found) {
       const prev = old.get(book.id);
@@ -453,6 +459,7 @@ function renderLibrary() {
       ? h('p', { class: 'empty' }, `Looking through “${settings.root.name}”…`)
       : h('div', { class: 'empty' },
           h('p', {}, `No audiobooks found in “${settings.root?.name}”.`),
+          zippedHint(),
           h('button', { class: 'btn', type: 'button', onclick: () => showFolders() }, 'Pick another folder')));
     return;
   }
@@ -479,7 +486,8 @@ function renderLibrary() {
       h('button', { class: 'link', type: 'button', onclick: openSort }, `Sort: ${SORTS[settings.sort]}`)),
     h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred'], ...(offline.supported ? [['saved', 'Downloaded']] : [])].map(([key, label]) =>
       h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
-    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map((b) => bookCard(b, settings.list))) : h('p', { class: 'empty' }, 'Nothing matches that.')
+    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map((b) => bookCard(b, settings.list))) : h('p', { class: 'empty' }, 'Nothing matches that.'),
+    ...(zipped ? [zippedHint()] : [])
   );
 }
 

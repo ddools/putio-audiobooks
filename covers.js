@@ -2,6 +2,7 @@
 // audiobook search first, then Open Library. Both are keyless and CORS-open.
 
 const JUNK = /\b(e?pub|ebook\S*|unabridged|mp3|m4b|\d+\s?kbps)\b/gi;
+const ARTICLE = /^(the|a|an)$/;
 const words = (s) => s.toLowerCase().replace(/['’]/g, '').match(/[\p{L}\p{N}]+/gu) || [];
 
 async function getJson(url) {
@@ -17,13 +18,14 @@ export async function findCover(book) {
   // A book sitting directly in "Audiobooks" gets that as its author. Not useful to search on.
   const author = /^(audio)?books?$/i.test(book.author) ? '' : book.author;
   const mine = words(title);
+  const core = mine.filter((x) => !ARTICLE.test(x)).length;
   const ours = new Set(words(`${title} ${author}`));
   // Folder names are messy, so a hit must have its main title inside our name,
   // and either cover half of it or share a word with the author we can see.
   const fits = (name, by) => {
-    const w = words(String(name || '').split(/[:(\[]/)[0]).filter((x) => !/^(the|a|an)$/.test(x));
+    const w = words(String(name || '').split(/[:(\[]/)[0]).filter((x) => !ARTICLE.test(x));
     if (!w.length || !w.every((x) => ours.has(x))) return false;
-    return w.length * 2 >= mine.length || words(String(by || '')).some((x) => x.length > 2 && ours.has(x));
+    return w.length * 2 >= core || words(String(by || '')).some((x) => x.length > 2 && ours.has(x));
   };
 
   for (const term of new Set([`${title} ${author}`, title].map((t) => words(t).join(' ')))) {

@@ -12,7 +12,11 @@ const CLIENT_ID = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '' : BA
 const $ = (sel, root = document) => root.querySelector(sel);
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-const byName = (a, b) => collator.compare(a.name, b.name);
+// "Book I" and "Book 1" should sort together, so standalone roman numerals count as numbers.
+const ROMAN = { I: 1, V: 5, X: 10 };
+const unroman = (s) => s.replace(/\b[IVX]+\b/g, (r) =>
+  [...r].reduce((n, c, i) => n + (ROMAN[c] < ROMAN[r[i + 1]] ? -ROMAN[c] : ROMAN[c]), 0));
+const byName = (a, b) => collator.compare(unroman(a.name), unroman(b.name));
 
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
@@ -360,18 +364,28 @@ async function rescan() {
   lookupCovers();
 }
 
-// book.art: undefined = not looked up yet, '' = looked and found nothing (or removed), else the URL.
+// book.art: undefined = not looked up yet, '' = found nothing (a manual Rescan tries again),
+// null = removed by hand (never looked up again), else the URL.
 let lookingUp = false;
 async function lookupCovers() {
   if (lookingUp) return;
   lookingUp = true;
   // shortcut: one at a time and stop at the first error (Apple allows ~20 searches a minute), the rest
   // are picked up on the next launch or rescan. Add a paced queue if big libraries fill too slowly.
-  for (const book of library.filter((b) => b.weak && b.art === undefined)) {
-    try { book.art = await findCover(book); } catch { break; }
-    if (book.art) book.cover = book.art;
+  const asked = new Set();
+  for (;;) {
+    const next = library.find((b) => b.weak && b.art === undefined && !asked.has(b.id));
+    if (!next) break;
+    asked.add(next.id);
+    let art;
+    try { art = await findCover(next); } catch (err) { console.warn('Cover lookup stopped:', err); break; }
+    // A rescan can swap in new book objects while we wait, so find the book again.
+    const book = library.find((b) => b.id === next.id);
+    if (!book) continue;
+    book.art = art;
+    if (art) book.cover = art;
     saveLibrary();
-    if (book.art) { renderLibrary(); if (cur?.book === book) { refreshPlayer(); updateMediaSession(); } }
+    if (art) { renderLibrary(); if (cur?.book === book) { refreshPlayer(); updateMediaSession(); } }
   }
   lookingUp = false;
 }
@@ -472,12 +486,12 @@ function openSettings() {
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); showFolders(); } }, 'Change')),
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); for (const b of library) if (b.art === '') delete b.art; rescan(); } }, 'Rescan')),
     cur?.book.art ? h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Wrong cover?'), h('small', {}, `Looked up for “${cur.book.title}”`)),
       h('button', { class: 'btn', type: 'button', onclick: () => {
         close();
-        Object.assign(cur.book, { art: '', cover: null });
+        Object.assign(cur.book, { art: null, cover: null });
         saveLibrary(); renderLibrary(); refreshPlayer(); updateMediaSession();
       } }, 'Remove')) : null,
     h('div', { class: 'setting' },

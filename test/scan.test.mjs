@@ -21,13 +21,15 @@ const root = dir('Audiobooks',
   loose,
   dir('Stephen King - 11.22.63', file('book.m4b')),
   dir('Stephen King',
-    dir('The Stand [Unabridged]', file('10 - Ten.mp3'), file('2 - Two.mp3'), file('notes.txt'),
+    dir('The Stand [Unabridged]', file('10 - Ten.mp3'), file('2 - Two.mp3'), file('notes.txt'), file('extras.zip'),
       dir('CD2', file('01.mp3')), dir('CD1', file('Track II.mp3'), file('Track I.mp3')))),
   dir('Parts', file('Dune 2.m4b'), file('Dune 1.m4b')),
   dir('Mixed', file('Emma.m4b'), file('Persuasion.m4b')),
+  file('Zipped Book.RAR'),
   dir('L1', dir('L2', dir('L3', dir('L4', file('deep.mp3'), dir('L5', file('too deep.mp3')))))));
 
-const books = await scan(root, listFiles);
+const archives = [];
+const books = await scan(root, listFiles, archives);
 const by = (title) => books.find((b) => b.title === title);
 
 // A loose file in the library folder is a book; "Author - Title" gives the author.
@@ -49,6 +51,9 @@ assert.equal(by('Persuasion').author, 'Mixed');
 // Four levels down is scanned, five is not.
 assert.ok(by('L4'));
 assert.equal(books.length, 7);
+
+// Archives are not books, but they are reported.
+assert.deepEqual(archives.sort(), ['Zipped Book.RAR', 'extras.zip']);
 
 assert.equal(trackTitle('03 - The Storm.mp3', 2), 'The Storm');
 assert.equal(trackTitle('03.mp3', 2), 'Part 3');

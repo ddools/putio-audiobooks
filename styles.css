@@ -145,6 +145,7 @@ input::placeholder { color: var(--muted); }
 .connect summary { cursor: pointer; padding: 8px 0; font-size: 14px; }
 .connect details .row { margin-top: 8px; }
 .fine { color: var(--muted); font-size: 13px; }
+.zipped { text-align: center; }
 
 /* ---------- folder picker ---------- */
 

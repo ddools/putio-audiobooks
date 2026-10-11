@@ -9,6 +9,7 @@ export const byName = (a, b) => collator.compare(unroman(a.name), unroman(b.name
 
 const AUDIO_EXT = /\.(mp3|m4b|m4a|aac|ogg|oga|opus|flac|wav)$/i;
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
+const ARCHIVE_EXT = /\.(zip|rar)$/i;
 const DISC_DIR = /^(cd|disc|disk|part|volume|vol)[\s._-]*\d+$/i;
 const MAX_DEPTH = 4;
 
@@ -45,7 +46,8 @@ function makeBook(id, rawTitle, rawAuthor, files, cover) {
 }
 
 // Every book under root. listFiles(id) resolves to { files }, as api.listFiles does.
-export async function scan(root, listFiles) {
+// Archives can't be played; their names go into `archives` so the caller can say so.
+export async function scan(root, listFiles, archives = []) {
   const out = [];
   // One limit of 4 listings for the whole scan. A limit per folder would multiply at each level.
   let active = 0;
@@ -53,7 +55,11 @@ export async function scan(root, listFiles) {
   const list = async (id) => {
     if (active < 4) active++;
     else await new Promise((go) => waiting.push(go)); // woken by a finished call, which hands its slot over
-    try { return (await listFiles(id)).files; }
+    try {
+      const files = (await listFiles(id)).files;
+      archives.push(...files.filter((f) => ARCHIVE_EXT.test(f.name)).map((f) => f.name));
+      return files;
+    }
     finally { const next = waiting.shift(); if (next) next(); else active--; }
   };
 

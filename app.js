@@ -118,7 +118,7 @@ function sheet(title, build) {
 
 /* ---------- state ---------- */
 
-const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title' }, store.get('settings', {}));
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title', lockChapters: false }, store.get('settings', {}));
 let library = store.get('library', []);
 let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
@@ -341,10 +341,14 @@ let query = '';
 let filter = 'all';
 let showHidden = false;
 
-function coverEl(book) {
+function coverHue(title) {
   let hash = 0;
-  for (const ch of book.title) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  const made = h('div', { class: 'cover made', style: `--hue:${hash % 360}` },
+  for (const ch of title) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return hash % 360;
+}
+
+function coverEl(book) {
+  const made = h('div', { class: 'cover made', style: `--hue:${coverHue(book.title)}` },
     h('span', { class: 'cover-title' }, book.title), book.author ? h('span', { class: 'cover-author' }, book.author) : null);
   if (!book.cover) return made;
   const img = h('img', { class: 'cover', src: book.cover, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
@@ -515,6 +519,9 @@ function openSettings() {
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
+    isIOS ? h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Lock screen buttons'), h('small', {}, settings.lockChapters ? 'Previous and next chapter' : 'Skip back and forward')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { settings.lockChapters = !settings.lockChapters; saveSettings(); setupMediaSession(); close(); } }, 'Switch')) : null,
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
       h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, 'Sign out')),
@@ -612,18 +619,19 @@ async function loadTrack(ti, time = 0, autoplay = false) {
   pendingSeek = time;
   lastGood = time;
   shownChapter = -1;
+  if (autoplay) lockState('playing');
   refreshPlayer();
 
   let url = !offline.has(track.id) && cachedUrl(track.id);
   if (!url) {
     try { url = await getUrl(track.id); }
-    catch (err) { if (ticket === loadTicket) failed(err); return; }
+    catch (err) { if (ticket === loadTicket) { lockState('paused'); failed(err); } return; }
     if (ticket !== loadTicket) return;
   }
   audio.defaultPlaybackRate = settings.speed;
   audio.src = time > 1 ? `${url}#t=${Math.floor(time)}` : url;
   audio.playbackRate = settings.speed;
-  if (autoplay) audio.play().catch(() => {});
+  if (autoplay) audio.play().catch(() => { if (ticket === loadTicket) lockState('paused'); });
 }
 
 function openBook(book, autoplay) {
@@ -897,6 +905,7 @@ function tick() {
     ui.chapter.disabled = !list;
     ui.miniSub.textContent = list ? label : cur.book.author || '';
     updateMediaSession();
+    updatePositionState();
   }
 
   const [a, b] = bounds();
@@ -1016,28 +1025,79 @@ function openSleep() {
 
 /* ---------- lock screen / headphone controls ---------- */
 
+// The made-up cover from coverEl (.cover.made in styles.css), drawn as an image
+// the lock screen can show. Null where the canvas can't do oklch colours.
+function madeArt(book) {
+  const key = `${book.title}\n${book.author}`;
+  if (madeArt.key === key) return madeArt.src;
+  let src = null;
+  try {
+    const S = 512, hue = coverHue(book.title), x = S * 0.15, w = S * 0.75;
+    const canvas = Object.assign(document.createElement('canvas'), { width: S, height: S });
+    const g = canvas.getContext('2d');
+    const bg = g.createLinearGradient(144, -52, 368, 564); // 160deg across the square
+    bg.addColorStop(0, `oklch(0.46 0.09 ${hue})`);
+    bg.addColorStop(1, `oklch(0.3 0.07 ${hue})`);
+    g.fillStyle = bg;
+    g.fillRect(0, 0, S, S);
+    g.fillStyle = 'rgb(0 0 0 / 0.28)';
+    g.fillRect(0, 0, S * 0.05, S);
+    g.fillStyle = 'rgb(255 255 255 / 0.08)';
+    g.fillRect(S * 0.05, 0, S * 0.015, S);
+
+    g.fillStyle = `oklch(0.95 0.03 ${hue})`;
+    g.textBaseline = 'top';
+    g.font = '600 50px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    const lines = [];
+    for (const word of book.title.split(/\s+/)) {
+      const joined = `${lines[lines.length - 1]} ${word}`;
+      if (lines.length && g.measureText(joined).width <= w) lines[lines.length - 1] = joined;
+      else lines.push(word);
+    }
+    if (lines.length > 4) lines[3] += '…';
+    lines.slice(0, 4).forEach((line, i) => g.fillText(line, x, S * 0.11 + i * 56, w));
+    if (book.author) {
+      g.globalAlpha = 0.8;
+      g.textBaseline = 'alphabetic';
+      g.font = '500 25px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      g.letterSpacing = '2px';
+      g.fillText(book.author.toUpperCase(), x, S * 0.89, w);
+    }
+    src = canvas.toDataURL('image/png');
+  } catch {}
+  Object.assign(madeArt, { key, src });
+  return src;
+}
+
 function updateMediaSession() {
   if (!('mediaSession' in navigator) || !cur) return;
   const list = chapterList();
   const art = cur.book.cover
     ? [{ src: cur.book.cover }]
-    : [{ src: new URL('icons/icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }];
+    : [{ src: madeArt(cur.book) || new URL('icons/icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }];
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: list ? list[chapterIndex()].title : cur.book.title,
-      artist: cur.book.author || 'put.io Audiobooks',
+      // iOS shows only title and artist, so the book's name rides along with the author.
+      artist: list ? [cur.book.title, cur.book.author].filter(Boolean).join(' · ') : cur.book.author || 'put.io Audiobooks',
       album: cur.book.title,
       artwork: art,
     });
   } catch {}
 }
+// Said out loud so the controls don't drop to "paused" in the gap between two files.
+function lockState(state) {
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
+}
 function updatePositionState() {
   if (!('mediaSession' in navigator) || !cur?.loaded || !Number.isFinite(audio.duration)) return;
+  // The bar covers the chapter, like the one in the player.
+  const [a, b] = bounds();
   try {
     navigator.mediaSession.setPositionState({
-      duration: audio.duration,
+      duration: b - a,
       playbackRate: audio.playbackRate || 1,
-      position: clamp(audio.currentTime, 0, audio.duration),
+      position: clamp(audio.currentTime - a, 0, b - a),
     });
   } catch {}
 }
@@ -1046,15 +1106,15 @@ function setupMediaSession() {
   const on = (action, fn) => { try { navigator.mediaSession.setActionHandler(action, fn); } catch {} };
   on('play', () => { if (audio.paused) togglePlay(); });
   on('pause', () => audio.pause());
-  on('seekbackward', (e) => skip(-(e.seekOffset || settings.back)));
-  on('seekforward', (e) => skip(e.seekOffset || settings.fwd));
-  on('seekto', (e) => seekTo(e.seekTime));
+  on('seekto', (e) => seekTo(bounds()[0] + e.seekTime));
   // iOS shows either skip buttons or track buttons on the lock screen, never
-  // both. Skips matter more for audiobooks, so leave track buttons off there.
-  if (!isIOS) {
-    on('previoustrack', prevChapter);
-    on('nexttrack', nextChapter);
-  }
+  // both. Skips matter more for audiobooks, so a setting has to ask for chapters.
+  const chapters = !isIOS || settings.lockChapters;
+  const skips = !isIOS || !settings.lockChapters;
+  on('seekbackward', skips ? (e) => skip(-(e.seekOffset || settings.back)) : null);
+  on('seekforward', skips ? (e) => skip(e.seekOffset || settings.fwd) : null);
+  on('previoustrack', chapters ? prevChapter : null);
+  on('nexttrack', chapters ? nextChapter : null);
 }
 
 /* ---------- audio events ---------- */
@@ -1071,11 +1131,12 @@ audio.addEventListener('loadedmetadata', () => {
   updatePositionState();
 });
 audio.addEventListener('timeupdate', tick);
-audio.addEventListener('playing', () => { if (cur) cur.retries = 0; pausedAt = 0; tick(); updatePositionState(); });
+audio.addEventListener('playing', () => { if (cur) cur.retries = 0; pausedAt = 0; lockState('playing'); tick(); updatePositionState(); });
 audio.addEventListener('ratechange', updatePositionState);
 audio.addEventListener('seeked', updatePositionState);
 audio.addEventListener('pause', () => {
   pausedAt = Date.now();
+  lockState('paused');
   savePosition(true);
   tick();
 });
@@ -1105,6 +1166,7 @@ audio.addEventListener('error', () => {
     loadTrack(cur.ti, lastGood, true);
   } else {
     toast('Couldn’t play this file. Check your connection and try again.');
+    lockState('paused');
     cur.started = false;
     pendingSeek = lastGood;
     tick();

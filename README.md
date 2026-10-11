@@ -5,7 +5,7 @@ An audiobook player PWA for your put.io files. Static files only. No build step,
 ## Run it
 
 1. Host this folder on any static HTTPS host (Vercel, Netlify, GitHub Pages, your NAS behind HTTPS).
-2. In put.io, go to Settings > Account > OAuth apps and create an app. Set the callback URL to the exact URL where Earful is hosted, including the trailing slash.
+2. In put.io, open https://app.put.io/oauth/new and create an app. Set the callback URL to the exact URL where Earful is hosted, including the trailing slash.
 3. Open Earful, paste the app's Client ID, and connect. Or put the Client ID in `config.js` to skip that step.
 4. Pick the folder your audiobooks live in.
 5. On your phone, use "Add to Home Screen" to install it.

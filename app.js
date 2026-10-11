@@ -162,7 +162,7 @@ function showConnect() {
         : h('div', { class: 'setup' },
             h('ol', { class: 'steps' },
               h('li', {}, 'Create an app at ',
-                h('a', { href: 'https://app.put.io/settings/account/oauth/apps', target: '_blank', rel: 'noopener' }, 'put.io → OAuth apps'),
+                h('a', { href: 'https://app.put.io/oauth/new', target: '_blank', rel: 'noopener' }, 'put.io → OAuth apps'),
                 '. Use this as the callback URL:',
                 h('button', { class: 'copy', type: 'button', onclick: () => navigator.clipboard?.writeText(redirectUri).then(() => toast('Callback URL copied.')) }, redirectUri)),
               h('li', {}, 'Paste the Client ID it gives you.')),

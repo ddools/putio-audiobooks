@@ -402,9 +402,9 @@ function renderLibrary() {
     .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
     .sort((a, b) => positions[b.id].at - positions[a.id].at)
     .slice(0, 6);
+  // Native replaceChildren prints null as text, unlike h().
   shelf.replaceChildren(
-    going.length ? h('h2', { class: 'section' }, 'Keep listening') : null,
-    going.length ? h('div', { class: 'strip' }, going.map(bookCard)) : null,
+    ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map(bookCard))] : []),
     h('h2', { class: 'section' }, q ? `${match.length} found` : `All books`,
       scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${library.length}`)),
     match.length ? h('div', { class: 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
@@ -763,7 +763,7 @@ function tick() {
   if (idx !== shownChapter) {
     shownChapter = idx;
     const label = list ? list[idx].title : 'No chapters';
-    ui.chapter.replaceChildren(h('span', {}, label), list ? h('small', {}, `${idx + 1} of ${list.length}`) : null);
+    ui.chapter.replaceChildren(h('span', {}, label), ...(list ? [h('small', {}, `${idx + 1} of ${list.length}`)] : []));
     ui.chapter.disabled = !list;
     ui.miniSub.textContent = list ? label : cur.book.author || '';
     updateMediaSession();

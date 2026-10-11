@@ -377,11 +377,12 @@ async function rescan() {
 
 // book.art is a cover picked by hand: a URL, or null for "no cover". Unset means put.io's own image.
 function setArt(book, art) {
+  book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
   if (art === undefined) { delete book.art; book.cover = null; rescan(); } // the scan puts put.io's image back
   else Object.assign(book, { art, cover: art });
   saveLibrary();
   renderLibrary();
-  if (cur?.book === book) { refreshPlayer(); updateMediaSession(); }
+  if (cur?.book.id === book.id) { refreshPlayer(); updateMediaSession(); }
 }
 
 function openCoverPicker(book) {
@@ -728,8 +729,7 @@ function stopPlayback() {
 function togglePlay() {
   if (!cur) return;
   if (!cur.started) {
-    const pos = startPos(cur.book);
-    loadTrack(pos.t, pos.s, true);
+    loadTrack(cur.ti, pendingSeek, true); // not startPos: a chapter picked before the first play must stick
   } else if (audio.ended && positions[cur.book.id]?.done) {
     loadTrack(0, 0, true); // finished: start the book again
   } else if (audio.paused) {
@@ -796,13 +796,14 @@ async function loadChapters(book) {
   book._tried = true;
   try {
     const info = await parseM4b(httpReader(await getUrl(file.id), file.size));
+    book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
     book.chapters = info.chapters;
     book.duration = info.duration;
     if (info.tags.album || info.tags.title) book.title = info.tags.album || info.tags.title;
     if (info.tags.artist || info.tags.albumArtist) book.author = info.tags.artist || info.tags.albumArtist;
     saveLibrary();
     renderLibrary();
-    if (cur?.book === book) { shownChapter = -1; refreshPlayer(); }
+    if (cur?.book.id === book.id) { shownChapter = -1; refreshPlayer(); }
   } catch (err) {
     console.warn('Could not read chapters for', book.title, err);
   }
@@ -866,13 +867,15 @@ async function pullPositions() {
       else { cur.ti = pos.t; pendingSeek = pos.s; refreshPlayer(); }
     }
   }
-  // Marks made before they synced have no time yet. Send them now that put.io's own have been applied.
+  // Marks made before they synced have no time yet. Stamp them now that put.io's own have been applied.
   for (const id of new Set([...marks.starred, ...marks.hidden])) {
     if (markAt[id]) continue;
     markAt[id] = Date.now();
-    pushMark(id);
     marked = true;
   }
+  // Whatever put.io lacks or holds an older copy of goes up now: sends that failed offline are not retried elsewhere.
+  for (const [id, p] of Object.entries(positions)) if (!(remote['pos_' + id]?.at >= p.at)) pushPosition(id);
+  for (const id of Object.keys(markAt)) if (!(remote['mark_' + id]?.at >= markAt[id])) pushMark(id);
   if (marked) saveMarks();
   if (changed) savePositions();
   if (changed || marked) renderLibrary();

@@ -33,7 +33,7 @@ On localhost the Client ID in `config.js` is ignored, because put.io only accept
 - An audio file sitting directly in the library folder is a book on its own.
 - `Author/Book/` folders and `Author - Title` names both give you an author.
 - An image in the folder becomes the cover. One named `cover`, `folder` or `front` is preferred. Without one, the app searches Apple's audiobooks and Open Library once for that book, after a scan, and takes the first match; if nothing turns up, the book gets a generated cover. "Cover art" in a book's menu runs the same search so you can pick a cover yourself.
-- Folders are scanned four levels below the library folder.
+- Folders are scanned six levels below the library folder.
 - Zip and RAR files can't be played. The library tells you how many it skipped; extract them on put.io and rescan.
 
 ## What it does

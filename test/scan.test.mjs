@@ -27,7 +27,7 @@ const root = dir('Audiobooks',
   dir('Parts', file('Dune 2.m4b'), file('Dune 1.m4b')),
   dir('Mixed', file('Emma.m4b'), file('Persuasion.m4b')),
   file('Zipped Book.RAR'),
-  dir('L1', dir('L2', dir('L3', dir('L4', file('deep.mp3'), dir('L5', file('too deep.mp3')))))));
+  dir('L1', dir('L2', dir('L3', dir('L4', dir('L5', dir('L6', file('deep.mp3'), dir('L7', file('too deep.mp3')))))))));
 
 const archives = [];
 const books = await scan(root, listFiles, archives);
@@ -52,8 +52,8 @@ assert.equal(by('Persuasion').author, 'Mixed');
 // A lone M4B beside other books' folders keeps its own name; the folder is the author, not the title.
 assert.equal(by('It').author, 'Stephen King');
 
-// Four levels down is scanned, five is not.
-assert.ok(by('L4'));
+// Six levels down is scanned, seven is not.
+assert.ok(by('L6'));
 assert.equal(books.length, 8);
 
 // Archives are not books, but they are reported.

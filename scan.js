@@ -11,7 +11,7 @@ const AUDIO_EXT = /\.(mp3|m4b|m4a|aac|ogg|oga|opus|flac|wav)$/i;
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
 const ARCHIVE_EXT = /\.(zip|rar)$/i;
 const DISC_DIR = /^(cd|disc|disk|part|volume|vol)[\s._-]*\d+$/i;
-const MAX_DEPTH = 4;
+const MAX_DEPTH = 6;
 
 function tidy(name) {
   // Only audio extensions come off: a folder called "11.22.63" keeps its ending.

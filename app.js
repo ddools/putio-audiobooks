@@ -1,7 +1,7 @@
 import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID } from './config.js';
-import { findCover } from './covers.js';
+import { coverTerm, searchCovers } from './covers.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -63,6 +63,7 @@ const ICONS = {
   next: '<path d="M6 6v12l9-6z" fill="currentColor"/><path d="M18 6v12"/>',
   back: '<path d="M4 4v5h5"/><path d="M4.6 9A8.5 8.5 0 1 1 3.5 12"/>',
   fwd: '<path d="M20 4v5h-5"/><path d="M19.4 9A8.5 8.5 0 1 0 20.5 12"/>',
+  grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
@@ -73,6 +74,7 @@ const ICONS = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 15.5l-4.5-4.5-8 8"/>',
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
@@ -123,7 +125,7 @@ function sheet(title, build) {
 
 /* ---------- state ---------- */
 
-const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30 }, store.get('settings', {}));
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false }, store.get('settings', {}));
 let library = store.get('library', []);
 let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
@@ -200,7 +202,7 @@ function showConnect() {
               h('summary', {}, 'Use an OAuth token instead'),
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Titles of books without a cover are sent to Apple and Open Library to find one.'))
+      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Searching for a cover sends that book’s title to Apple and Open Library.'))
   );
 }
 
@@ -285,7 +287,6 @@ function makeBook(id, rawTitle, rawAuthor, files, cover) {
   return {
     id, title, author,
     cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
-    weak: !cover, // no image in the folder; an audio file's own thumbnail is often blank
     tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
   };
 }
@@ -344,10 +345,7 @@ async function rescan() {
       if (prev?.chapters && prev.tracks.length === 1 && prev.tracks[0].id === book.tracks[0].id) {
         Object.assign(book, { chapters: prev.chapters, duration: prev.duration, title: prev.title, author: prev.author });
       }
-      if (prev?.art !== undefined && book.weak) {
-        book.art = prev.art;
-        if (prev.art) book.cover = prev.art;
-      }
+      if (prev?.art || prev?.art === null) Object.assign(book, { art: prev.art, cover: prev.art });
     }
     found.sort((a, b) => collator.compare(a.title, b.title));
     library = found;
@@ -361,33 +359,43 @@ async function rescan() {
   }
   scanning = false;
   if (api.hasToken()) renderLibrary();
-  lookupCovers();
 }
 
-// book.art: undefined = not looked up yet, '' = found nothing (a manual Rescan tries again),
-// null = removed by hand (never looked up again), else the URL.
-let lookingUp = false;
-async function lookupCovers() {
-  if (lookingUp) return;
-  lookingUp = true;
-  // shortcut: one at a time and stop at the first error (Apple allows ~20 searches a minute), the rest
-  // are picked up on the next launch or rescan. Add a paced queue if big libraries fill too slowly.
-  const asked = new Set();
-  for (;;) {
-    const next = library.find((b) => b.weak && b.art === undefined && !asked.has(b.id));
-    if (!next) break;
-    asked.add(next.id);
-    let art;
-    try { art = await findCover(next); } catch (err) { console.warn('Cover lookup stopped:', err); break; }
-    // A rescan can swap in new book objects while we wait, so find the book again.
-    const book = library.find((b) => b.id === next.id);
-    if (!book) continue;
-    book.art = art;
-    if (art) book.cover = art;
-    saveLibrary();
-    if (art) { renderLibrary(); if (cur?.book === book) { refreshPlayer(); updateMediaSession(); } }
-  }
-  lookingUp = false;
+// book.art is a cover picked by hand: a URL, or null for "no cover". Unset means put.io's own image.
+function setArt(book, art) {
+  if (art === undefined) { delete book.art; book.cover = null; rescan(); } // the scan puts put.io's image back
+  else Object.assign(book, { art, cover: art });
+  saveLibrary();
+  renderLibrary();
+  if (cur?.book === book) { refreshPlayer(); updateMediaSession(); }
+}
+
+function openCoverPicker(book) {
+  const input = h('input', { type: 'search', value: coverTerm(book), 'aria-label': 'Search for a cover' });
+  const results = h('div', { class: 'cover-picks' });
+  let ticket = 0;
+  const search = async () => {
+    const mine = ++ticket;
+    results.replaceChildren(h('p', { class: 'fine' }, 'Searching…'));
+    let found;
+    try { found = await searchCovers(input.value.trim()); }
+    catch { found = null; }
+    if (mine !== ticket) return;
+    results.replaceChildren(...(found?.length
+      ? found.map((c) => h('button', { type: 'button', title: [c.title, c.by].filter(Boolean).join(' · '), onclick: () => { setArt(book, c.url); dlg.close(); } },
+          h('img', { class: 'cover', src: c.thumb, alt: [c.title, c.by].filter(Boolean).join(', '), loading: 'lazy', referrerpolicy: 'no-referrer' }),
+          h('small', {}, c.title)))
+      : [h('p', { class: 'fine' }, found ? 'Nothing found. Try fewer words, or just the title.' : 'Couldn’t reach the cover search. Try again in a minute.')]));
+  };
+  const dlg = sheet('Cover art', (close) => [
+    h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); search(); } },
+      input, h('button', { class: 'btn', type: 'submit' }, 'Search')),
+    results,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', type: 'button', onclick: () => { setArt(book, null); close(); } }, 'No cover'),
+      h('button', { class: 'btn', type: 'button', onclick: () => { setArt(book, undefined); close(); } }, 'Use put.io’s image')),
+  ]);
+  search();
 }
 
 /* ---------- library view ---------- */
@@ -417,9 +425,9 @@ function bookCard(book) {
   const p = positions[book.id];
   const starred = marks.starred.has(book.id);
   const hidden = marks.hidden.has(book.id);
-  const mark = (name, label, kind, cls) =>
-    h('button', { class: 'mark ' + cls, type: 'button', 'aria-label': `${label}: ${book.title}`, title: label, 'aria-pressed': kind === 'starred' ? String(starred) : null,
-      onclick: () => toggleMark(kind, book.id), html: icon(name) });
+  const mark = (name, label, onclick, cls = '') =>
+    h('button', { class: 'mark ' + cls, type: 'button', 'aria-label': `${label}: ${book.title}`, title: label, onclick, html: icon(name) });
+  const flip = (kind) => () => toggleMark(kind, book.id);
   return h('div', { class: 'book' + (hidden ? ' is-hidden' : '') },
     h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
       coverEl(book),
@@ -427,8 +435,9 @@ function bookCard(book) {
       h('span', { class: 'book-title' }, book.title),
       h('span', { class: 'book-sub' }, [book.author, progressLabel(book)].filter(Boolean).join(' · '))),
     h('div', { class: 'book-tools' },
-      mark('star', starred ? 'Remove star' : 'Star', 'starred', 'mark-star' + (starred ? ' on' : '')),
-      hidden ? mark('eye', 'Show again', 'hidden', 'mark-hide') : mark('eyeOff', 'Hide', 'hidden', 'mark-hide')));
+      mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
+      mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
+      mark('image', 'Cover art', () => openCoverPicker(book))));
 }
 
 function showLibrary() {
@@ -439,6 +448,8 @@ function showLibrary() {
     h('header', { class: 'bar' },
       h('div', { class: 'wordmark' }, 'put.io Audiobooks'),
       h('span', { class: 'spacer grow' }),
+      iconBtn(settings.list ? 'grid' : 'list', settings.list ? 'Grid view' : 'List view',
+        () => { settings.list = !settings.list; saveSettings(); showLibrary(); }),
       iconBtn('more', 'Settings', openSettings)),
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
     h('div', { id: 'shelf' })
@@ -475,7 +486,7 @@ function renderLibrary() {
       scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${shown.length}`),
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
         showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null),
-    match.length ? h('div', { class: 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
+    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
   );
 }
 
@@ -486,14 +497,7 @@ function openSettings() {
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); showFolders(); } }, 'Change')),
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); for (const b of library) if (b.art === '') delete b.art; rescan(); } }, 'Rescan')),
-    cur?.book.art ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Wrong cover?'), h('small', {}, `Looked up for “${cur.book.title}”`)),
-      h('button', { class: 'btn', type: 'button', onclick: () => {
-        close();
-        Object.assign(cur.book, { art: null, cover: null });
-        saveLibrary(); renderLibrary(); refreshPlayer(); updateMediaSession();
-      } }, 'Remove')) : null,
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
       h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, 'Sign out')),

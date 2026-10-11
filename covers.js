@@ -1,41 +1,35 @@
-// Cover art lookup for books put.io has no image for. Asks Apple's
-// audiobook search first, then Open Library. Both are keyless and CORS-open.
+// Cover art search for the per-book picker. Asks Apple's audiobook search
+// and Open Library; both are keyless and CORS-open.
 
 const JUNK = /\b(e?pub|ebook\S*|unabridged|mp3|m4b|\d+\s?kbps)\b/gi;
-const ARTICLE = /^(the|a|an)$/;
 const words = (s) => s.toLowerCase().replace(/['’]/g, '').match(/[\p{L}\p{N}]+/gu) || [];
+
+// A starting search for a book, made from its messy folder name. Title only:
+// the "author" is often just the parent folder ("Audiobooks", a downloader's name).
+export const coverTerm = (book) => words(book.title.replace(JUNK, ' ')).join(' ');
 
 async function getJson(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Cover lookup failed (${res.status})`);
+  if (!res.ok) throw new Error(`Cover search failed (${res.status})`);
   return res.json();
 }
 
-// Returns an image URL, or '' when nothing convincing turns up.
-// Throws on network trouble or rate limits, so the caller can try again later.
-export async function findCover(book) {
-  const title = book.title.replace(JUNK, ' ');
-  // A book sitting directly in "Audiobooks" gets that as its author. Not useful to search on.
-  const author = /^(audio)?books?$/i.test(book.author) ? '' : book.author;
-  const mine = words(title);
-  const core = mine.filter((x) => !ARTICLE.test(x)).length;
-  const ours = new Set(words(`${title} ${author}`));
-  // Folder names are messy, so a hit must have its main title inside our name,
-  // and either cover half of it or share a word with the author we can see.
-  const fits = (name, by) => {
-    const w = words(String(name || '').split(/[:(\[]/)[0]).filter((x) => !ARTICLE.test(x));
-    if (!w.length || !w.every((x) => ours.has(x))) return false;
-    return w.length * 2 >= core || words(String(by || '')).some((x) => x.length > 2 && ours.has(x));
-  };
-
-  for (const term of new Set([`${title} ${author}`, title].map((t) => words(t).join(' ')))) {
-    if (!term) continue;
-    const { results = [] } = await getJson(`https://itunes.apple.com/search?media=audiobook&limit=5&term=${encodeURIComponent(term)}`);
-    const hit = results.find((r) => r.artworkUrl100 && fits(r.collectionName, r.artistName));
-    if (hit) return hit.artworkUrl100.replace('100x100', '600x600');
-  }
-  if (!mine.length) return '';
-  const { docs = [] } = await getJson(`https://openlibrary.org/search.json?limit=5&fields=title,author_name,cover_i&q=${encodeURIComponent(mine.join(' '))}`);
-  const doc = docs.find((d) => d.cover_i && fits(d.title, (d.author_name || []).join(' ')));
-  return doc ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : '';
+// Candidates as { thumb, url, title, by }. Throws only when both sources fail.
+export async function searchCovers(term) {
+  const q = encodeURIComponent(term);
+  const [apple, open] = await Promise.allSettled([
+    getJson(`https://itunes.apple.com/search?media=audiobook&limit=9&term=${q}`),
+    getJson(`https://openlibrary.org/search.json?limit=6&fields=title,author_name,cover_i&q=${q}`),
+  ]);
+  if (apple.status === 'rejected' && open.status === 'rejected') throw apple.reason;
+  return [
+    ...(apple.value?.results || []).filter((r) => r.artworkUrl100).map((r) => ({
+      thumb: r.artworkUrl100.replace('100x100', '200x200'), url: r.artworkUrl100.replace('100x100', '600x600'),
+      title: r.collectionName || '', by: r.artistName || '',
+    })),
+    ...(open.value?.docs || []).filter((d) => d.cover_i).map((d) => ({
+      thumb: `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg`, url: `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg`,
+      title: d.title || '', by: (d.author_name || []).join(', '),
+    })),
+  ];
 }

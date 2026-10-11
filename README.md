@@ -32,13 +32,14 @@ On localhost the Client ID in `config.js` is ignored, because put.io only accept
 - Several M4Bs whose names differ only by a number are treated as parts of one book.
 - An audio file sitting directly in the library folder is a book on its own.
 - `Author/Book/` folders and `Author - Title` names both give you an author.
-- An image in the folder becomes the cover. One named `cover`, `folder` or `front` is preferred. Without one, the title is looked up with Apple's audiobook search, then Open Library. If nothing fits, the book gets a generated cover.
+- An image in the folder becomes the cover. One named `cover`, `folder` or `front` is preferred. Without one, the book gets a generated cover. The picture icon under a book searches Apple's audiobooks and Open Library so you can pick a cover yourself.
 - Folders are scanned four levels below the library folder.
 
 ## What it does
 
 - Library with search and a "Keep listening" shelf.
 - Star a book to move it to the front of the library. Hide one to take it off the shelf; "Show all" brings hidden books back into view. Both are saved on the device only.
+- The button beside Settings switches the library between a cover grid and a compact list.
 - Chapter list, chapter-scoped scrubber, previous/next chapter, skip back 15 / forward 30.
 - Speed from 0.5x to 3.5x in 0.05 steps, remembered.
 - Sleep timer: 5 to 60 minutes, or end of chapter.
@@ -51,7 +52,7 @@ On localhost the Client ID in `config.js` is ignored, because put.io only accept
 
 ## Privacy
 
-The app talks to put.io straight from your browser. Your token and listening positions stay on your device and in your put.io account. The one exception is cover lookup: titles of books without a cover image are sent to Apple and Open Library. A looked-up cover that is wrong can be removed in Settings while that book is loaded.
+The app talks to put.io straight from your browser. Your token and listening positions stay on your device and in your put.io account. The one exception is the cover picker: when you open it for a book, the search text (the book's title and author to start with) is sent to Apple and Open Library.
 
 ## Not in this version
 
@@ -65,7 +66,7 @@ The app talks to put.io straight from your browser. Your token and listening pos
 - `app.js` UI and playback
 - `api.js` put.io client
 - `m4b.js` chapter and tag reader
-- `covers.js` cover art lookup
+- `covers.js` cover art search
 - `sw.js` service worker
 - `styles.css` styles
 - `config.js` put.io Client ID

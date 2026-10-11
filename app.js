@@ -1,0 +1,1021 @@
+import * as api from './api.js';
+import { httpReader, parseM4b } from './m4b.js';
+import { CLIENT_ID } from './config.js';
+
+/* ---------- small helpers ---------- */
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const byName = (a, b) => collator.compare(a.name, b.name);
+
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else if (k === 'html') el.innerHTML = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(kid));
+  }
+  return el;
+}
+
+const store = {
+  get(key, fallback) {
+    try {
+      const v = localStorage.getItem('earful:' + key);
+      return v == null ? fallback : JSON.parse(v);
+    } catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem('earful:' + key, JSON.stringify(value)); } catch {}
+  },
+  del(key) { try { localStorage.removeItem('earful:' + key); } catch {} },
+};
+
+const ICONS = {
+  play: '<path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5z" fill="currentColor" stroke="none"/>',
+  pause: '<rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/>',
+  prev: '<path d="M18 6v12l-9-6z" fill="currentColor"/><path d="M6 6v12"/>',
+  next: '<path d="M6 6v12l9-6z" fill="currentColor"/><path d="M18 6v12"/>',
+  back: '<path d="M4 4v5h5"/><path d="M4.6 9A8.5 8.5 0 1 1 3.5 12"/>',
+  fwd: '<path d="M20 4v5h-5"/><path d="M19.4 9A8.5 8.5 0 1 0 20.5 12"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  left: '<path d="M15 6l-6 6 6 6"/>',
+  right: '<path d="M9 6l6 6-6 6"/>',
+  more: '<path d="M5 12h.01M12 12h.01M19 12h.01"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+};
+const icon = (name) =>
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+const iconBtn = (name, label, onclick, cls = '') =>
+  h('button', { class: 'icon-btn ' + cls, type: 'button', 'aria-label': label, title: label, onclick, html: icon(name) });
+
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const hrs = Math.floor(sec / 3600);
+  const min = Math.floor((sec % 3600) / 60);
+  const s = String(sec % 60).padStart(2, '0');
+  return hrs ? `${hrs}:${String(min).padStart(2, '0')}:${s}` : `${min}:${s}`;
+}
+function fmtLong(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const hrs = Math.floor(sec / 3600);
+  const min = Math.round((sec % 3600) / 60);
+  if (hrs && min === 60) return `${hrs + 1}h`;
+  if (hrs) return min ? `${hrs}h ${min}m` : `${hrs}h`;
+  return min ? `${min}m` : 'under a minute';
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
+}
+
+function sheet(title, build) {
+  const dlg = h('dialog', { class: 'sheet' });
+  const close = () => dlg.close();
+  dlg.append(
+    h('div', { class: 'sheet-head' }, h('h3', {}, title), iconBtn('x', 'Close', close)),
+    h('div', { class: 'sheet-body' }, build(close))
+  );
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+  return dlg;
+}
+
+/* ---------- state ---------- */
+
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30 }, store.get('settings', {}));
+let library = store.get('library', []);
+let positions = store.get('positions', {});
+const saveSettings = () => store.set('settings', settings);
+const saveLibrary = () => store.set('library', library.map(({ _tried, ...book }) => book));
+const savePositions = () => store.set('positions', positions);
+
+const audio = $('#audio');
+const app = $('#app');
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const redirectUri = location.origin + location.pathname;
+
+function failed(err) {
+  if (err?.status === 401) {
+    signOut();
+    toast('put.io signed you out. Connect again.');
+  } else {
+    toast(err?.message || 'Something went wrong.');
+  }
+}
+
+/* ---------- connect ---------- */
+
+function showConnect() {
+  document.body.dataset.view = 'connect';
+  const clientId = CLIENT_ID || settings.clientId;
+  const idInput = h('input', { type: 'text', inputmode: 'numeric', placeholder: 'Client ID', value: clientId || '', autocomplete: 'off', 'aria-label': 'put.io Client ID' });
+  const tokenInput = h('input', { type: 'password', placeholder: 'OAuth token', autocomplete: 'off', 'aria-label': 'put.io OAuth token' });
+
+  const connect = () => {
+    const id = (CLIENT_ID || idInput.value).trim();
+    if (!id) { idInput.focus(); return toast('Enter your Client ID first.'); }
+    settings.clientId = id;
+    saveSettings();
+    location.href = api.authUrl(id, redirectUri);
+  };
+  const useToken = async () => {
+    const token = tokenInput.value.trim();
+    if (!token) return tokenInput.focus();
+    api.setToken(token);
+    try {
+      await api.accountInfo();
+      store.set('token', token);
+      start();
+    } catch (err) {
+      api.setToken(null);
+      toast(err.status === 401 ? 'put.io rejected that token.' : err.message);
+    }
+  };
+
+  app.replaceChildren(
+    h('div', { class: 'connect' },
+      h('div', { class: 'brand' }, h('img', { src: 'icons/icon.svg', alt: '', width: 56, height: 56 }), h('span', {}, 'Earful')),
+      h('h1', {}, 'Your put.io audiobooks, played like audiobooks.'),
+      h('p', { class: 'lede' }, 'Chapters, speed, a sleep timer, and it remembers your place on every device.'),
+      CLIENT_ID
+        ? h('button', { class: 'btn primary', type: 'button', onclick: connect }, 'Connect put.io')
+        : h('div', { class: 'setup' },
+            h('ol', { class: 'steps' },
+              h('li', {}, 'Create an app at ',
+                h('a', { href: 'https://app.put.io/settings/account/oauth/apps', target: '_blank', rel: 'noopener' }, 'put.io → OAuth apps'),
+                '. Use this as the callback URL:',
+                h('button', { class: 'copy', type: 'button', onclick: () => navigator.clipboard?.writeText(redirectUri).then(() => toast('Callback URL copied.')) }, redirectUri)),
+              h('li', {}, 'Paste the Client ID it gives you.')),
+            h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); connect(); } },
+              idInput, h('button', { class: 'btn primary', type: 'submit' }, 'Connect')),
+            h('details', {},
+              h('summary', {}, 'Use an OAuth token instead'),
+              h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
+                tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
+      h('p', { class: 'fine' }, 'Earful talks to put.io directly from this device. Nothing passes through another server.'))
+  );
+}
+
+function signOut() {
+  stopPlayback();
+  store.del('token');
+  api.setToken(null);
+  showConnect();
+}
+
+/* ---------- folder picker ---------- */
+
+async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
+  document.body.dataset.view = 'folders';
+  const here = trail[trail.length - 1];
+  const listEl = h('div', { class: 'folder-list' }, h('p', { class: 'empty' }, 'Loading…'));
+  const choose = () => {
+    settings.root = { id: here.id, name: here.name };
+    saveSettings();
+    library = [];
+    saveLibrary();
+    showLibrary();
+    rescan();
+  };
+  app.replaceChildren(
+    h('header', { class: 'bar' },
+      trail.length > 1
+        ? iconBtn('left', 'Back', () => showFolders(trail.slice(0, -1)))
+        : settings.root ? iconBtn('x', 'Cancel', showLibrary) : h('span', { class: 'spacer' }),
+      h('div', { class: 'bar-title' }, h('small', {}, 'Where are your audiobooks?'), h('strong', {}, here.name)),
+      h('span', { class: 'spacer' })),
+    listEl,
+    h('footer', { class: 'pick' }, h('button', { class: 'btn primary', type: 'button', onclick: choose }, `Use “${here.name}”`))
+  );
+  try {
+    const { files } = await api.listFiles(here.id);
+    const dirs = files.filter((f) => f.file_type === 'FOLDER').sort(byName);
+    listEl.replaceChildren(
+      ...(dirs.length
+        ? dirs.map((d) =>
+            h('button', { class: 'folder', type: 'button', onclick: () => showFolders([...trail, { id: d.id, name: d.name }]) },
+              h('span', { class: 'folder-icon', html: icon('folder') }), h('span', { class: 'folder-name' }, d.name), h('span', { class: 'chev', html: icon('right') })))
+        : [h('p', { class: 'empty' }, 'No folders in here.')])
+    );
+  } catch (err) {
+    listEl.replaceChildren(h('p', { class: 'empty' }, err.message));
+    failed(err);
+  }
+}
+
+/* ---------- library scan ---------- */
+
+const AUDIO_EXT = /\.(mp3|m4b|m4a|aac|ogg|oga|opus|flac|wav)$/i;
+const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
+const DISC_DIR = /^(cd|disc|disk|part|volume|vol)[\s._-]*\d+$/i;
+const MAX_DEPTH = 4;
+
+const stripExt = (name) => name.replace(/\.[a-z0-9]{2,4}$/i, '');
+function tidy(name) {
+  let s = stripExt(name).replace(/_/g, ' ');
+  if (!/\s/.test(s)) s = s.replace(/\./g, ' ');
+  const bare = s.replace(/\s*[\[(][^\])]*[\])]/g, '').trim();
+  return (bare || s).replace(/\s+/g, ' ').trim();
+}
+function trackTitle(name, index) {
+  const s = tidy(name).replace(/^\d+\s*[-._)]*\s*/, '').trim();
+  return s && !/^\d+$/.test(s) ? s : `Part ${index + 1}`;
+}
+function pickCover(files) {
+  const images = files.filter((f) => IMAGE_EXT.test(f.name) && f.screenshot);
+  const named = images.find((f) => /cover|folder|front/i.test(f.name));
+  return (named || images[0])?.screenshot || null;
+}
+function makeBook(id, rawTitle, rawAuthor, files, cover) {
+  let title = tidy(rawTitle);
+  let author = rawAuthor ? tidy(rawAuthor) : '';
+  if (!author && title.includes(' - ')) {
+    const cut = title.indexOf(' - ');
+    author = title.slice(0, cut).trim();
+    title = title.slice(cut + 3).trim();
+  }
+  return {
+    id, title, author,
+    cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
+    tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
+  };
+}
+
+async function pool(items, limit, fn) {
+  const queue = [...items];
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) await fn(queue.shift());
+  }));
+}
+
+async function scanFolder(folder, parentName, depth, out) {
+  const isRoot = depth === 0;
+  const { files } = await api.listFiles(folder.id);
+  const dirs = files.filter((f) => f.file_type === 'FOLDER');
+  const discs = isRoot ? [] : dirs.filter((d) => DISC_DIR.test(d.name)).sort(byName);
+  let cover = pickCover(files);
+  let tracks = files.filter((f) => f.file_type !== 'FOLDER' && AUDIO_EXT.test(f.name)).sort(byName);
+  for (const disc of discs) {
+    const sub = (await api.listFiles(disc.id)).files;
+    tracks = tracks.concat(sub.filter((f) => AUDIO_EXT.test(f.name)).sort(byName));
+    cover = cover || pickCover(sub);
+  }
+
+  if (isRoot) {
+    for (const f of tracks) out.push(makeBook('f' + f.id, f.name, '', [f], null));
+  } else if (tracks.length) {
+    // MP3s (and friends) in one folder are one book. Each M4B is its own
+    // book, unless they are clearly numbered parts of the same thing.
+    const m4bs = tracks.filter((f) => /\.m4b$/i.test(f.name));
+    const rest = tracks.filter((f) => !/\.m4b$/i.test(f.name));
+    const numberedParts = m4bs.length > 1 && new Set(m4bs.map((f) => f.name.toLowerCase().replace(/\d+/g, '#'))).size === 1;
+    if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover));
+    if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover));
+    else if (!rest.length && m4bs.length === 1) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover));
+    else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover));
+  }
+
+  if (depth < MAX_DEPTH) {
+    const deeper = dirs.filter((d) => !discs.includes(d));
+    await pool(deeper, 4, (d) => scanFolder(d, isRoot ? '' : folder.name, depth + 1, out));
+  }
+}
+
+let scanning = false;
+async function rescan() {
+  if (scanning || !settings.root) return;
+  scanning = true;
+  renderLibrary();
+  try {
+    const found = [];
+    await scanFolder(settings.root, '', 0, found);
+    const old = new Map(library.map((b) => [b.id, b]));
+    for (const book of found) {
+      const prev = old.get(book.id);
+      if (prev?.chapters && prev.tracks.length === 1 && prev.tracks[0].id === book.tracks[0].id) {
+        Object.assign(book, { chapters: prev.chapters, duration: prev.duration, title: prev.title, author: prev.author });
+      }
+    }
+    found.sort((a, b) => collator.compare(a.title, b.title));
+    library = found;
+    saveLibrary();
+    if (cur) {
+      const same = library.find((b) => b.id === cur.book.id);
+      if (same) cur.book = same;
+    }
+  } catch (err) {
+    failed(err);
+  }
+  scanning = false;
+  if (api.hasToken()) renderLibrary();
+}
+
+/* ---------- library view ---------- */
+
+let query = '';
+
+function coverEl(book) {
+  let hash = 0;
+  for (const ch of book.title) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const made = h('div', { class: 'cover made', style: `--hue:${hash % 360}` },
+    h('span', { class: 'cover-title' }, book.title), book.author ? h('span', { class: 'cover-author' }, book.author) : null);
+  if (!book.cover) return made;
+  const img = h('img', { class: 'cover', src: book.cover, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+  img.addEventListener('error', () => img.replaceWith(made));
+  return img;
+}
+
+function progressLabel(book) {
+  const p = positions[book.id];
+  if (!p) return '';
+  if (p.done) return 'Finished';
+  return p.p > 0.005 ? `${Math.round(p.p * 100)}%` : '';
+}
+
+function bookCard(book) {
+  const p = positions[book.id];
+  return h('button', { class: 'book', type: 'button', onclick: () => openBook(book, true) },
+    coverEl(book),
+    h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
+    h('span', { class: 'book-title' }, book.title),
+    h('span', { class: 'book-sub' }, [book.author, progressLabel(book)].filter(Boolean).join(' · ')));
+}
+
+function showLibrary() {
+  document.body.dataset.view = 'library';
+  const search = h('input', { type: 'search', placeholder: 'Search your books', value: query, 'aria-label': 'Search your books' });
+  search.addEventListener('input', () => { query = search.value; renderLibrary(); });
+  app.replaceChildren(
+    h('header', { class: 'bar' },
+      h('div', { class: 'wordmark' }, 'Earful'),
+      h('span', { class: 'spacer grow' }),
+      iconBtn('more', 'Settings', openSettings)),
+    h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
+    h('div', { id: 'shelf' })
+  );
+  renderLibrary();
+}
+
+function renderLibrary() {
+  const shelf = $('#shelf');
+  if (!shelf) return;
+  if (!library.length) {
+    shelf.replaceChildren(scanning
+      ? h('p', { class: 'empty' }, `Looking through “${settings.root.name}”…`)
+      : h('div', { class: 'empty' },
+          h('p', {}, `No audiobooks found in “${settings.root?.name}”.`),
+          h('button', { class: 'btn', type: 'button', onclick: () => showFolders() }, 'Pick another folder')));
+    return;
+  }
+  const q = query.trim().toLowerCase();
+  const match = library.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q));
+  const going = q ? [] : library
+    .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
+    .sort((a, b) => positions[b.id].at - positions[a.id].at)
+    .slice(0, 6);
+  shelf.replaceChildren(
+    going.length ? h('h2', { class: 'section' }, 'Keep listening') : null,
+    going.length ? h('div', { class: 'strip' }, going.map(bookCard)) : null,
+    h('h2', { class: 'section' }, q ? `${match.length} found` : `All books`,
+      scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${library.length}`)),
+    match.length ? h('div', { class: 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
+  );
+}
+
+function openSettings() {
+  sheet('Settings', (close) => [
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Library folder'), h('small', {}, settings.root?.name || 'Not set')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); showFolders(); } }, 'Change')),
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
+      h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, 'Sign out')),
+  ]);
+}
+
+/* ---------- playback engine ---------- */
+
+let cur = null;           // { book, ti, started, loaded, retries }
+let pendingSeek = 0;      // where to land once the track's metadata arrives
+let lastGood = 0;         // last known position, for recovering from stream errors
+let loadTicket = 0;
+let pausedAt = 0;
+let sleep = null;         // { mode: 'time', until } | { mode: 'chapter', index }
+let scrubbing = false;
+let shownChapter = -1;
+
+const urlCache = new Map();
+const URL_TTL = 20 * 60 * 1000;
+const cachedUrl = (id) => {
+  const hit = urlCache.get(id);
+  return hit && Date.now() - hit.at < URL_TTL ? hit.url : null;
+};
+async function getUrl(id) {
+  const hit = cachedUrl(id);
+  if (hit) return hit;
+  const url = await api.fileUrl(id);
+  urlCache.set(id, { url, at: Date.now() });
+  return url;
+}
+
+const multi = () => cur.book.tracks.length > 1;
+const now = () => (cur?.loaded ? audio.currentTime || 0 : pendingSeek || 0);
+const trackDuration = () => (cur?.loaded && Number.isFinite(audio.duration) ? audio.duration : (!multi() && cur.book.duration) || 0);
+
+function chapterList() {
+  const book = cur.book;
+  if (multi()) return book.tracks.map((t, i) => ({ title: trackTitle(t.name, i), track: i }));
+  return book.chapters?.length > 1 ? book.chapters : null;
+}
+function chapterIndex() {
+  if (multi()) return cur.ti;
+  const list = chapterList();
+  if (!list) return 0;
+  const t = now() + 0.25;
+  let i = 0;
+  while (i + 1 < list.length && list[i + 1].start <= t) i++;
+  return i;
+}
+function bounds() {
+  const list = chapterList();
+  if (list && !multi()) {
+    const c = list[chapterIndex()];
+    return [c.start, c.end > c.start ? c.end : trackDuration()];
+  }
+  return [0, trackDuration()];
+}
+function bookFraction() {
+  const d = trackDuration();
+  const part = d ? clamp(now() / d, 0, 1) : 0;
+  if (!multi()) return part;
+  const tracks = cur.book.tracks;
+  const total = tracks.reduce((n, t) => n + t.size, 0) || 1;
+  const before = tracks.slice(0, cur.ti).reduce((n, t) => n + t.size, 0);
+  return (before + part * tracks[cur.ti].size) / total;
+}
+function bookSecondsLeft() {
+  const d = trackDuration();
+  if (!d) return null;
+  let left = d - now();
+  if (multi()) {
+    const tracks = cur.book.tracks;
+    const perSecond = tracks[cur.ti].size / d;
+    if (!perSecond) return null;
+    left += tracks.slice(cur.ti + 1).reduce((n, t) => n + t.size, 0) / perSecond;
+  }
+  return left / (settings.speed || 1);
+}
+
+function startPos(book) {
+  const p = positions[book.id];
+  if (!p || p.done) return { t: 0, s: 0 };
+  const rewind = Date.now() - p.at > 5 * 60 * 1000 ? 10 : 0;
+  return { t: clamp(p.t || 0, 0, book.tracks.length - 1), s: Math.max(0, (p.s || 0) - rewind) };
+}
+
+async function loadTrack(ti, time = 0, autoplay = false) {
+  const ticket = ++loadTicket;
+  const track = cur.book.tracks[ti];
+  cur.ti = ti;
+  cur.started = true;
+  cur.loaded = false;
+  pendingSeek = time;
+  lastGood = time;
+  shownChapter = -1;
+  refreshPlayer();
+
+  let url = cachedUrl(track.id);
+  if (!url) {
+    try { url = await getUrl(track.id); }
+    catch (err) { if (ticket === loadTicket) failed(err); return; }
+    if (ticket !== loadTicket) return;
+  }
+  audio.defaultPlaybackRate = settings.speed;
+  audio.src = time > 1 ? `${url}#t=${Math.floor(time)}` : url;
+  audio.playbackRate = settings.speed;
+  if (autoplay) audio.play().catch(() => {});
+}
+
+function openBook(book, autoplay) {
+  if (cur?.book.id === book.id) {
+    openPlayer();
+    if (autoplay && audio.paused) togglePlay();
+    return;
+  }
+  if (cur) { savePosition(true); audio.pause(); }
+  const pos = startPos(book);
+  cur = { book, ti: pos.t, started: false, loaded: false, retries: 0 };
+  pendingSeek = pos.s;
+  shownChapter = -1;
+  store.set('last', book.id);
+  loadChapters(book);
+  if (autoplay) {
+    loadTrack(pos.t, pos.s, true);
+    openPlayer();
+  } else {
+    audio.removeAttribute('src');
+    getUrl(book.tracks[pos.t].id).catch(() => {});
+    refreshPlayer();
+  }
+}
+
+function stopPlayback() {
+  if (cur) savePosition(true);
+  audio.pause();
+  audio.removeAttribute('src');
+  audio.load();
+  cur = null;
+  closePlayer();
+  refreshPlayer();
+}
+
+function togglePlay() {
+  if (!cur) return;
+  if (!cur.started) {
+    const pos = startPos(cur.book);
+    loadTrack(pos.t, pos.s, true);
+  } else if (audio.ended && positions[cur.book.id]?.done) {
+    loadTrack(0, 0, true); // finished: start the book again
+  } else if (audio.paused) {
+    if (cur.loaded && pausedAt && Date.now() - pausedAt > 5 * 60 * 1000) audio.currentTime = Math.max(0, audio.currentTime - 10);
+    audio.play().catch(() => toast('Tap play again to start.'));
+  } else {
+    audio.pause();
+  }
+}
+
+function seekTo(time) {
+  if (!cur) return;
+  if (!cur.loaded) { pendingSeek = Math.max(0, time); if (cur.started) loadTrack(cur.ti, pendingSeek, !audio.paused); tick(); return; }
+  const d = trackDuration();
+  audio.currentTime = clamp(time, 0, d ? d - 0.25 : time);
+  tick();
+}
+function skip(delta) {
+  if (!cur) return;
+  const target = now() + delta;
+  const d = trackDuration();
+  if (multi() && d && target >= d && cur.ti + 1 < cur.book.tracks.length) return loadTrack(cur.ti + 1, 0, !audio.paused);
+  seekTo(target);
+}
+function gotoChapter(i) {
+  const list = chapterList();
+  if (!cur || !list) return;
+  i = clamp(i, 0, list.length - 1);
+  if (multi() && i === cur.ti && cur.loaded) seekTo(0);
+  else if (multi()) loadTrack(i, 0, cur.started ? !audio.paused : false);
+  else seekTo(list[i].start);
+  if (sleep?.mode === 'chapter') sleep.index = i;
+}
+function prevChapter() {
+  if (!cur) return;
+  if (!chapterList()) return seekTo(0);
+  const [start] = bounds();
+  const i = chapterIndex();
+  gotoChapter(now() - start > 4 || i === 0 ? i : i - 1);
+}
+function nextChapter() {
+  const list = cur && chapterList();
+  if (list && chapterIndex() + 1 < list.length) gotoChapter(chapterIndex() + 1);
+}
+
+function setSpeed(value) {
+  settings.speed = clamp(Math.round(value * 20) / 20, 0.5, 3.5);
+  saveSettings();
+  audio.defaultPlaybackRate = settings.speed;
+  audio.playbackRate = settings.speed;
+  tick();
+}
+
+function setSleep(next) {
+  sleep = next;
+  tick();
+}
+
+/* ---------- M4B chapters ---------- */
+
+async function loadChapters(book) {
+  const file = book.tracks[0];
+  if (book.tracks.length !== 1 || !/\.(m4b|m4a)$/i.test(file.name) || book.chapters || book._tried) return;
+  book._tried = true;
+  try {
+    const info = await parseM4b(httpReader(await getUrl(file.id), file.size));
+    book.chapters = info.chapters;
+    book.duration = info.duration;
+    if (info.tags.album || info.tags.title) book.title = info.tags.album || info.tags.title;
+    if (info.tags.artist || info.tags.albumArtist) book.author = info.tags.artist || info.tags.albumArtist;
+    saveLibrary();
+    renderLibrary();
+    if (cur?.book === book) { shownChapter = -1; refreshPlayer(); }
+  } catch (err) {
+    console.warn('Could not read chapters for', book.title, err);
+  }
+}
+
+/* ---------- positions: local, plus put.io config for other devices ---------- */
+
+let lastSave = 0;
+let lastPush = 0;
+
+function savePosition(force) {
+  if (!cur || !cur.loaded) return;
+  if (audio.ended && positions[cur.book.id]?.done) return; // finished stays finished
+  const t = Date.now();
+  if (!force && t - lastSave < 5000) return;
+  lastSave = t;
+  positions[cur.book.id] = { t: cur.ti, s: Math.floor(audio.currentTime), at: t, p: +bookFraction().toFixed(4) };
+  savePositions();
+  if (force || t - lastPush > 30000) pushPosition(cur.book.id);
+}
+function pushPosition(bookId) {
+  lastPush = Date.now();
+  api.setConfig('pos_' + bookId, positions[bookId]).catch(() => {});
+}
+async function pullPositions() {
+  if (!api.hasToken()) return;
+  let remote;
+  try { remote = await api.getConfig(); } catch { return; }
+  let changed = false;
+  for (const [key, value] of Object.entries(remote)) {
+    if (!key.startsWith('pos_') || !value || typeof value.at !== 'number') continue;
+    const id = key.slice(4);
+    if (positions[id] && positions[id].at >= value.at) continue;
+    if (cur?.book.id === id && !audio.paused) continue;
+    positions[id] = value;
+    changed = true;
+    if (cur?.book.id === id) {
+      const pos = startPos(cur.book);
+      if (cur.started) loadTrack(pos.t, pos.s, false);
+      else { cur.ti = pos.t; pendingSeek = pos.s; refreshPlayer(); }
+    }
+  }
+  if (changed) { savePositions(); renderLibrary(); }
+}
+
+/* ---------- player UI ---------- */
+
+const ui = {};
+const skipBtn = (dir, secs, onclick) =>
+  h('button', { class: 'skip', type: 'button', 'aria-label': `${dir === 'back' ? 'Back' : 'Forward'} ${secs} seconds`, onclick },
+    h('span', { html: icon(dir) }), h('b', {}, String(secs)));
+
+function buildPlayer() {
+  const player = $('#player');
+  ui.range = h('input', { type: 'range', min: 0, max: 1000, value: 0, step: 1, 'aria-label': 'Position in chapter' });
+  ui.range.addEventListener('input', () => { scrubbing = true; tick(); });
+  ui.range.addEventListener('change', () => {
+    const [a, b] = bounds();
+    scrubbing = false;
+    seekTo(a + (ui.range.value / 1000) * (b - a));
+  });
+  player.append(
+    h('header', { class: 'p-top' },
+      iconBtn('down', 'Close player', closePlayer),
+      ui.bookText = h('span', { class: 'p-left' }),
+      iconBtn('list', 'Chapters', openChapters)),
+    ui.cover = h('div', { class: 'p-cover' }),
+    h('div', { class: 'p-meta' }, ui.title = h('h2'), ui.author = h('p')),
+    ui.chapter = h('button', { class: 'p-chapter', type: 'button', onclick: openChapters }),
+    h('div', { class: 'p-scrub' }, ui.range, h('div', { class: 'p-times' }, ui.elapsed = h('span'), ui.remain = h('span'))),
+    h('div', { class: 'p-controls' },
+      iconBtn('prev', 'Previous chapter', prevChapter),
+      skipBtn('back', settings.back, () => skip(-settings.back)),
+      ui.play = h('button', { class: 'play', type: 'button', 'aria-label': 'Play', onclick: togglePlay }),
+      skipBtn('fwd', settings.fwd, () => skip(settings.fwd)),
+      iconBtn('next', 'Next chapter', nextChapter)),
+    h('div', { class: 'p-tools' },
+      ui.speed = h('button', { class: 'tool', type: 'button', onclick: openSpeed }, ui.speedValue = h('b'), h('small', {}, 'Speed')),
+      ui.sleep = h('button', { class: 'tool', type: 'button', onclick: openSleep }, h('b', { html: icon('moon') }), ui.sleepValue = h('small'))),
+    ui.bookBar = h('div', { class: 'p-bookbar' }, h('i'))
+  );
+
+  const mini = $('#mini');
+  mini.append(
+    ui.miniBar = h('div', { class: 'bar-thin' }, h('i')),
+    h('button', { class: 'mini-open', type: 'button', 'aria-label': 'Open player', onclick: openPlayer },
+      ui.miniCover = h('span', { class: 'mini-cover' }),
+      h('span', { class: 'mini-text' }, ui.miniTitle = h('strong'), ui.miniSub = h('small'))),
+    ui.miniPlay = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Play', onclick: togglePlay })
+  );
+}
+
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+
+// Things that change when the book or chapter changes.
+function refreshPlayer() {
+  const mini = $('#mini');
+  mini.hidden = !cur;
+  document.body.classList.toggle('has-mini', !!cur);
+  if (!cur) return;
+  const book = cur.book;
+  if (ui.shownBook !== book.id || ui.shownCover !== book.cover) {
+    ui.shownBook = book.id;
+    ui.shownCover = book.cover;
+    ui.cover.replaceChildren(coverEl(book));
+    ui.miniCover.replaceChildren(coverEl(book));
+  }
+  ui.title.textContent = book.title;
+  ui.author.textContent = book.author || '';
+  ui.miniTitle.textContent = book.title;
+  tick();
+}
+
+// Things that change as the audio plays.
+function tick() {
+  if (!cur) return;
+  const t = now();
+  if (cur.loaded) lastGood = t;
+  const list = chapterList();
+  const idx = chapterIndex();
+
+  if (idx !== shownChapter) {
+    shownChapter = idx;
+    const label = list ? list[idx].title : 'No chapters';
+    ui.chapter.replaceChildren(h('span', {}, label), list ? h('small', {}, `${idx + 1} of ${list.length}`) : null);
+    ui.chapter.disabled = !list;
+    ui.miniSub.textContent = list ? label : cur.book.author || '';
+    updateMediaSession();
+  }
+
+  const [a, b] = bounds();
+  const span = Math.max(0, b - a);
+  let rel = clamp(t - a, 0, span || Infinity);
+  if (scrubbing) rel = (ui.range.value / 1000) * span;
+  else ui.range.value = span ? Math.round((rel / span) * 1000) : 0;
+  ui.range.style.setProperty('--fill', `${ui.range.value / 10}%`);
+  setText(ui.elapsed, fmt(rel));
+  setText(ui.remain, span ? `-${fmt(span - rel)}` : '');
+
+  const frac = bookFraction();
+  const left = bookSecondsLeft();
+  ui.bookBar.firstChild.style.width = `${frac * 100}%`;
+  ui.miniBar.firstChild.style.width = `${frac * 100}%`;
+  setText(ui.bookText, left == null ? '' : `${multi() ? 'About ' : ''}${fmtLong(left)} left`);
+
+  const playing = !audio.paused && cur.started;
+  if (ui.playing !== playing) {
+    ui.playing = playing;
+    for (const b of [ui.play, ui.miniPlay]) {
+      b.innerHTML = icon(playing ? 'pause' : 'play');
+      b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    }
+  }
+  setText(ui.speedValue, `${settings.speed.toFixed(2).replace(/0$/, '')}×`);
+
+  let sleepLabel = 'Off';
+  if (sleep?.mode === 'time') {
+    const ms = sleep.until - Date.now();
+    if (ms <= 0) { sleep = null; audio.pause(); }
+    else sleepLabel = ms > 90000 ? `${Math.round(ms / 60000)} min` : fmt(ms / 1000);
+  } else if (sleep?.mode === 'chapter') {
+    sleepLabel = 'End of chapter';
+    if (!multi() && idx > sleep.index) { sleep = null; audio.pause(); sleepLabel = 'Off'; }
+  }
+  setText(ui.sleepValue, sleepLabel === 'Off' ? 'Sleep timer' : sleepLabel);
+  ui.sleep.classList.toggle('on', !!sleep);
+
+  if (playing) savePosition(false);
+
+  // Line up the next file's URL early so the hand-off works with the screen locked.
+  const d = trackDuration();
+  const next = multi() && cur.book.tracks[cur.ti + 1];
+  if (next && d && d - t < 120 && !cachedUrl(next.id) && !next._asking) {
+    next._asking = true;
+    getUrl(next.id).catch(() => {}).finally(() => { next._asking = false; });
+  }
+}
+
+function openPlayer() {
+  if (!cur) return;
+  const player = $('#player');
+  if (document.body.classList.contains('player-open')) return;
+  player.hidden = false;
+  player.inert = false;
+  requestAnimationFrame(() => document.body.classList.add('player-open'));
+  history.pushState({ player: true }, '');
+}
+function hidePlayer() {
+  document.body.classList.remove('player-open');
+  $('#player').inert = true;
+}
+function closePlayer() {
+  if (history.state?.player) history.back();
+  else hidePlayer();
+}
+addEventListener('popstate', hidePlayer);
+
+function openChapters() {
+  const list = cur && chapterList();
+  if (!list) return;
+  const current = chapterIndex();
+  const dlg = sheet('Chapters', (close) =>
+    h('ol', { class: 'chapters' }, list.map((c, i) =>
+      h('li', {}, h('button', { type: 'button', class: i === current ? 'current' : '', onclick: () => { gotoChapter(i); close(); } },
+        h('span', { class: 'num' }, i === current ? h('span', { html: icon('play') }) : String(i + 1)),
+        h('span', { class: 'name' }, c.title),
+        c.start != null ? h('span', { class: 'at' }, fmt(c.start)) : null)))));
+  $('.current', dlg)?.scrollIntoView({ block: 'center' });
+}
+
+function openSpeed() {
+  sheet('Speed', () => {
+    const value = h('output', {}, '');
+    const presets = [0.8, 1, 1.1, 1.2, 1.3, 1.5, 1.75, 2, 2.5, 3];
+    const chips = h('div', { class: 'chips' });
+    const paint = () => {
+      value.textContent = `${settings.speed.toFixed(2)}×`;
+      chips.replaceChildren(...presets.map((p) =>
+        h('button', { type: 'button', class: Math.abs(p - settings.speed) < 0.001 ? 'chip on' : 'chip', onclick: () => { setSpeed(p); paint(); } }, `${p}×`)));
+    };
+    paint();
+    return [
+      h('div', { class: 'stepper' },
+        h('button', { class: 'btn', type: 'button', 'aria-label': 'Slower', onclick: () => { setSpeed(settings.speed - 0.05); paint(); } }, '−'),
+        value,
+        h('button', { class: 'btn', type: 'button', 'aria-label': 'Faster', onclick: () => { setSpeed(settings.speed + 0.05); paint(); } }, '+')),
+      chips,
+    ];
+  });
+}
+
+function openSleep() {
+  sheet('Sleep timer', (close) => {
+    const pick = (next) => () => { setSleep(next); close(); };
+    const options = [5, 10, 15, 30, 45, 60].map((m) =>
+      h('button', { class: 'chip', type: 'button', onclick: pick({ mode: 'time', until: Date.now() + m * 60000 }) }, `${m} min`));
+    return [
+      h('div', { class: 'chips' }, options),
+      h('div', { class: 'chips wide' },
+        h('button', { class: sleep?.mode === 'chapter' ? 'chip on' : 'chip', type: 'button', onclick: pick({ mode: 'chapter', index: chapterIndex() }) }, 'End of this chapter'),
+        sleep ? h('button', { class: 'chip', type: 'button', onclick: pick(null) }, 'Turn off') : null),
+    ];
+  });
+}
+
+/* ---------- lock screen / headphone controls ---------- */
+
+function updateMediaSession() {
+  if (!('mediaSession' in navigator) || !cur) return;
+  const list = chapterList();
+  const art = cur.book.cover
+    ? [{ src: cur.book.cover }]
+    : [{ src: new URL('icons/icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }];
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: list ? list[chapterIndex()].title : cur.book.title,
+      artist: cur.book.author || 'Earful',
+      album: cur.book.title,
+      artwork: art,
+    });
+  } catch {}
+}
+function updatePositionState() {
+  if (!('mediaSession' in navigator) || !cur?.loaded || !Number.isFinite(audio.duration)) return;
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: audio.duration,
+      playbackRate: audio.playbackRate || 1,
+      position: clamp(audio.currentTime, 0, audio.duration),
+    });
+  } catch {}
+}
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  const on = (action, fn) => { try { navigator.mediaSession.setActionHandler(action, fn); } catch {} };
+  on('play', () => { if (audio.paused) togglePlay(); });
+  on('pause', () => audio.pause());
+  on('seekbackward', (e) => skip(-(e.seekOffset || settings.back)));
+  on('seekforward', (e) => skip(e.seekOffset || settings.fwd));
+  on('seekto', (e) => seekTo(e.seekTime));
+  // iOS shows either skip buttons or track buttons on the lock screen, never
+  // both. Skips matter more for audiobooks, so leave track buttons off there.
+  if (!isIOS) {
+    on('previoustrack', prevChapter);
+    on('nexttrack', nextChapter);
+  }
+}
+
+/* ---------- audio events ---------- */
+
+audio.addEventListener('loadedmetadata', () => {
+  if (!cur) return;
+  const d = Number.isFinite(audio.duration) ? audio.duration : 0;
+  if (pendingSeek > 0) audio.currentTime = d ? Math.min(pendingSeek, Math.max(0, d - 1)) : pendingSeek;
+  pendingSeek = 0;
+  cur.loaded = true;
+  audio.playbackRate = settings.speed;
+  if (!multi() && d && !cur.book.duration) { cur.book.duration = d; saveLibrary(); }
+  tick();
+  updatePositionState();
+});
+audio.addEventListener('timeupdate', tick);
+audio.addEventListener('playing', () => { if (cur) cur.retries = 0; pausedAt = 0; tick(); updatePositionState(); });
+audio.addEventListener('ratechange', updatePositionState);
+audio.addEventListener('seeked', updatePositionState);
+audio.addEventListener('pause', () => {
+  pausedAt = Date.now();
+  savePosition(true);
+  tick();
+});
+audio.addEventListener('ended', () => {
+  if (!cur) return;
+  const book = cur.book;
+  if (cur.ti + 1 < book.tracks.length) {
+    const stopHere = sleep?.mode === 'chapter';
+    if (stopHere) sleep = null;
+    loadTrack(cur.ti + 1, 0, !stopHere);
+    positions[book.id] = { t: cur.ti, s: 0, at: Date.now(), p: +bookFraction().toFixed(4) };
+  } else {
+    positions[book.id] = { t: 0, s: 0, at: Date.now(), p: 1, done: true };
+    sleep = null;
+  }
+  savePositions();
+  pushPosition(book.id);
+  renderLibrary();
+  tick();
+});
+audio.addEventListener('error', () => {
+  if (!cur || !cur.started || !audio.getAttribute('src')) return;
+  const track = cur.book.tracks[cur.ti];
+  urlCache.delete(track.id);
+  if (cur.retries++ < 2) {
+    // Stream links expire and are tied to an IP address. Ask for a fresh one.
+    loadTrack(cur.ti, lastGood, true);
+  } else {
+    toast('Couldn’t play this file. Check your connection and try again.');
+    cur.started = false;
+    pendingSeek = lastGood;
+    tick();
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) savePosition(true);
+  else pullPositions();
+});
+addEventListener('pagehide', () => savePosition(true));
+setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
+
+addEventListener('keydown', (e) => {
+  if (!cur || e.target.closest('input, dialog')) return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.code === 'ArrowLeft') skip(-settings.back);
+  else if (e.code === 'ArrowRight') skip(settings.fwd);
+});
+
+/* ---------- boot ---------- */
+
+function start() {
+  api.setToken(store.get('token'));
+  if (!settings.root) return showFolders();
+  showLibrary();
+  const last = library.find((b) => b.id === store.get('last'));
+  if (last && !cur && !positions[last.id]?.done) openBook(last, false);
+  rescan();
+  pullPositions();
+}
+
+function boot() {
+  buildPlayer();
+  setupMediaSession();
+  $('#player').inert = true;
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  // Coming back from put.io: the token arrives in the URL fragment.
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  if (fragment.get('access_token')) {
+    store.set('token', fragment.get('access_token'));
+    history.replaceState(null, '', location.pathname + location.search);
+  } else if (fragment.get('error')) {
+    toast('put.io didn’t grant access.');
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  if (store.get('token')) start();
+  else showConnect();
+}
+
+boot();

@@ -2,6 +2,7 @@ import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
+import * as offline from './offline.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -130,11 +131,22 @@ let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
 const saveLibrary = () => store.set('library', library.map(({ _tried, ...book }) => book));
 const savePositions = () => store.set('positions', positions);
-// Starred and hidden books, by id. Kept on this device only.
+// Starred and hidden books, by id. markAt is when each book's marks last changed: the newest change wins across devices.
 const marks = { starred: new Set(store.get('starred', [])), hidden: new Set(store.get('hidden', [])) };
+const markAt = store.get('markAt', {});
+function saveMarks() {
+  store.set('starred', [...marks.starred]);
+  store.set('hidden', [...marks.hidden]);
+  store.set('markAt', markAt);
+}
+function pushMark(id) {
+  api.setConfig('mark_' + id, { s: marks.starred.has(id), h: marks.hidden.has(id), at: markAt[id] }).catch(() => {});
+}
 function toggleMark(kind, id) {
   if (!marks[kind].delete(id)) marks[kind].add(id);
-  store.set(kind, [...marks[kind]]);
+  markAt[id] = Date.now();
+  saveMarks();
+  pushMark(id);
   renderLibrary();
 }
 
@@ -350,6 +362,8 @@ async function rescan() {
     found.sort((a, b) => collator.compare(a.title, b.title));
     library = found;
     saveLibrary();
+    // An empty scan is more likely a glitch than a cleared-out library; don't delete downloads over it.
+    if (found.length) offline.keepOnly(new Set(found.flatMap((b) => b.tracks.map((t) => String(t.id))))).catch(() => {});
     if (cur) {
       const same = library.find((b) => b.id === cur.book.id);
       if (same) cur.book = same;
@@ -432,6 +446,35 @@ const sortCmp = {
   added: (a, b) => (b.added || '') < (a.added || '') ? -1 : (b.added || '') > (a.added || '') ? 1 : 0,
 };
 
+// Downloads in progress, by book id.
+const downloads = new Map();
+function offlineLabel(book) {
+  const job = downloads.get(book.id);
+  return job ? `Downloading ${Math.round(job.p * 100)}%` : offline.hasBook(book) ? 'Downloaded' : '';
+}
+async function startDownload(book) {
+  if (downloads.has(book.id)) return;
+  const job = { p: 0, ctl: new AbortController() };
+  downloads.set(book.id, job);
+  renderLibrary();
+  loadChapters(book); // read them while put.io is in reach
+  try {
+    await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; renderLibrary(); } }, job.ctl.signal);
+    toast(`“${book.title}” is ready to play offline.`);
+  } catch (err) {
+    // A cancelled download is thrown away; a failed one keeps its finished tracks so it can resume.
+    if (job.ctl.signal.aborted) await offline.remove(book).catch(() => {});
+    else toast(err?.name === 'QuotaExceededError' ? 'Not enough space on this device.' : 'Download stopped. Start it again to pick up where it left off.');
+  }
+  downloads.delete(book.id);
+  renderLibrary();
+}
+async function removeDownload(book) {
+  if (cur?.book.id === book.id) stopPlayback();
+  await offline.remove(book).catch(() => {});
+  renderLibrary();
+}
+
 function bookCard(book, listRow) {
   const p = positions[book.id];
   const starred = marks.starred.has(book.id);
@@ -444,7 +487,7 @@ function bookCard(book, listRow) {
       coverEl(book),
       h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
       h('span', { class: 'book-title' }, book.title),
-      h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow)].filter(Boolean).join(' · '))),
+      h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow), offlineLabel(book)].filter(Boolean).join(' · '))),
     h('div', { class: 'book-tools' },
       mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
       mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
@@ -484,8 +527,9 @@ function renderLibrary() {
   if (!hiddenCount) showHidden = false;
   const shown = showHidden ? library : library.filter((b) => !marks.hidden.has(b.id));
   const status = (b) => (positions[b.id]?.done ? 'done' : positions[b.id]?.p > 0.005 ? 'going' : 'new');
+  const keep = { all: () => true, starred: (b) => marks.starred.has(b.id), saved: offline.hasBook };
   const match = shown.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q))
-    .filter((b) => filter === 'all' || (filter === 'starred' ? marks.starred.has(b.id) : status(b) === filter))
+    .filter(keep[filter] || ((b) => status(b) === filter))
     .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id) || sortCmp[settings.sort](a, b));
   const going = q ? [] : shown
     .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
@@ -499,7 +543,7 @@ function renderLibrary() {
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
         showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null,
       h('button', { class: 'link', type: 'button', onclick: openSort }, `Sort: ${SORTS[settings.sort]}`)),
-    h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred']].map(([key, label]) =>
+    h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred'], ...(offline.supported ? [['saved', 'Downloaded']] : [])].map(([key, label]) =>
       h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
     match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map((b) => bookCard(b, settings.list))) : h('p', { class: 'empty' }, 'Nothing matches that.')
   );
@@ -516,6 +560,11 @@ function openBookMenu(book) {
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Cover art'), h('small', {}, 'Search for a different cover')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, 'Choose')),
+    offline.supported ? h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Offline'), h('small', {}, offlineLabel(book) || `Download to this device · ${Math.ceil(book.tracks.reduce((n, t) => n + t.size, 0) / 1e6)} MB`)),
+      downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, 'Cancel')
+        : offline.hasBook(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => { removeDownload(book); close(); } }, 'Remove')
+        : h('button', { class: 'btn', type: 'button', onclick: () => { startDownload(book); close(); } }, 'Download')) : null,
   ]);
 }
 
@@ -556,6 +605,8 @@ const cachedUrl = (id) => {
   return hit && Date.now() - hit.at < URL_TTL ? hit.url : null;
 };
 async function getUrl(id) {
+  const local = offline.has(id) && await offline.localUrl(id);
+  if (local) return local;
   const hit = cachedUrl(id);
   if (hit) return hit;
   const url = await api.fileUrl(id);
@@ -629,7 +680,7 @@ async function loadTrack(ti, time = 0, autoplay = false) {
   shownChapter = -1;
   refreshPlayer();
 
-  let url = cachedUrl(track.id);
+  let url = !offline.has(track.id) && cachedUrl(track.id);
   if (!url) {
     try { url = await getUrl(track.id); }
     catch (err) { if (ticket === loadTicket) failed(err); return; }
@@ -757,7 +808,7 @@ async function loadChapters(book) {
   }
 }
 
-/* ---------- positions: local, plus put.io config for other devices ---------- */
+/* ---------- positions and marks: local, plus put.io config for other devices ---------- */
 
 let lastSave = 0;
 let lastPush = 0;
@@ -791,8 +842,19 @@ async function pullPositions() {
   let remote;
   try { remote = await api.getConfig(); } catch { return; }
   let changed = false;
+  let marked = false;
   for (const [key, value] of Object.entries(remote)) {
-    if (!key.startsWith('pos_') || !value || typeof value.at !== 'number') continue;
+    if (!value || typeof value.at !== 'number') continue;
+    if (key.startsWith('mark_')) {
+      const id = key.slice(5);
+      if (markAt[id] >= value.at) continue;
+      marks.starred[value.s ? 'add' : 'delete'](id);
+      marks.hidden[value.h ? 'add' : 'delete'](id);
+      markAt[id] = value.at;
+      marked = true;
+      continue;
+    }
+    if (!key.startsWith('pos_')) continue;
     const id = key.slice(4);
     if (positions[id] && positions[id].at >= value.at) continue;
     if (cur?.book.id === id && !audio.paused) continue;
@@ -804,7 +866,16 @@ async function pullPositions() {
       else { cur.ti = pos.t; pendingSeek = pos.s; refreshPlayer(); }
     }
   }
-  if (changed) { savePositions(); renderLibrary(); }
+  // Marks made before they synced have no time yet. Send them now that put.io's own have been applied.
+  for (const id of new Set([...marks.starred, ...marks.hidden])) {
+    if (markAt[id]) continue;
+    markAt[id] = Date.now();
+    pushMark(id);
+    marked = true;
+  }
+  if (marked) saveMarks();
+  if (changed) savePositions();
+  if (changed || marked) renderLibrary();
 }
 
 /* ---------- player UI ---------- */
@@ -1126,13 +1197,14 @@ function start() {
   showLibrary();
   const last = library.find((b) => b.id === store.get('last'));
   if (last && !cur && !positions[last.id]?.done) openBook(last, false);
-  rescan();
+  if (navigator.onLine) rescan();
   pullPositions();
 }
 
 function boot() {
   buildPlayer();
   setupMediaSession();
+  offline.init().then(renderLibrary, () => {});
   $('#player').inert = true;
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -1,8 +1,9 @@
 // Caches the app shell so the app opens instantly and offline.
-// Audio always streams straight from put.io and is never cached here.
-const CACHE = 'putio-audiobooks-shell-v6';
+// Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
+const PREFIX = 'putio-audiobooks-shell-';
+const CACHE = PREFIX + 'v7';
 const SHELL = [
-  './', 'index.html', 'styles.css', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js',
+  './', 'index.html', 'styles.css', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'offline.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'icons/apple-touch-icon.png',
 ];
@@ -14,7 +15,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

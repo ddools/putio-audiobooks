@@ -193,6 +193,7 @@ function showConnect() {
   app.replaceChildren(
     h('div', { class: 'connect' },
       h('div', { class: 'brand' }, h('img', { src: 'icons/icon.svg', alt: '', width: 56, height: 56 }), h('span', {}, 'put.io Audiobooks')),
+      h('img', { class: 'art', src: 'icons/connect-art.svg', alt: '', width: 312, height: 88 }),
       h('h1', {}, 'Your put.io audiobooks, played like audiobooks.'),
       h('p', { class: 'lede' }, 'Chapters, speed, a sleep timer, and it remembers your place on every device.'),
       CLIENT_ID
@@ -433,7 +434,7 @@ function showLibrary() {
   search.addEventListener('input', () => { query = search.value; renderLibrary(); });
   app.replaceChildren(
     h('header', { class: 'bar' },
-      h('div', { class: 'wordmark' }, 'put.io Audiobooks'),
+      h('div', { class: 'wordmark' }, h('img', { src: 'icons/icon.svg', alt: '', width: 28, height: 28 }), 'put.io Audiobooks'),
       h('span', { class: 'spacer grow' }),
       iconBtn(settings.list ? 'grid' : 'list', settings.list ? 'Grid view' : 'List view',
         () => { settings.list = !settings.list; saveSettings(); showLibrary(); }),

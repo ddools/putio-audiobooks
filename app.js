@@ -2,6 +2,7 @@ import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
+import * as offline from './offline.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -74,7 +75,6 @@ const ICONS = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 15.5l-4.5-4.5-8 8"/>',
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
@@ -125,17 +125,28 @@ function sheet(title, build) {
 
 /* ---------- state ---------- */
 
-const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false }, store.get('settings', {}));
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title' }, store.get('settings', {}));
 let library = store.get('library', []);
 let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
 const saveLibrary = () => store.set('library', library.map(({ _tried, ...book }) => book));
 const savePositions = () => store.set('positions', positions);
-// Starred and hidden books, by id. Kept on this device only.
+// Starred and hidden books, by id. markAt is when each book's marks last changed: the newest change wins across devices.
 const marks = { starred: new Set(store.get('starred', [])), hidden: new Set(store.get('hidden', [])) };
+const markAt = store.get('markAt', {});
+function saveMarks() {
+  store.set('starred', [...marks.starred]);
+  store.set('hidden', [...marks.hidden]);
+  store.set('markAt', markAt);
+}
+function pushMark(id) {
+  api.setConfig('mark_' + id, { s: marks.starred.has(id), h: marks.hidden.has(id), at: markAt[id] }).catch(() => {});
+}
 function toggleMark(kind, id) {
   if (!marks[kind].delete(id)) marks[kind].add(id);
-  store.set(kind, [...marks[kind]]);
+  markAt[id] = Date.now();
+  saveMarks();
+  pushMark(id);
   renderLibrary();
 }
 
@@ -288,6 +299,7 @@ function makeBook(id, rawTitle, rawAuthor, files, cover) {
     id, title, author,
     cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
     tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
+    added: files.reduce((m, f) => (f.created_at > m ? f.created_at : m), ''),
   };
 }
 
@@ -350,6 +362,8 @@ async function rescan() {
     found.sort((a, b) => collator.compare(a.title, b.title));
     library = found;
     saveLibrary();
+    // An empty scan is more likely a glitch than a cleared-out library; don't delete downloads over it.
+    if (found.length) offline.keepOnly(new Set(found.flatMap((b) => b.tracks.map((t) => String(t.id))))).catch(() => {});
     if (cur) {
       const same = library.find((b) => b.id === cur.book.id);
       if (same) cur.book = same;
@@ -401,6 +415,7 @@ function openCoverPicker(book) {
 /* ---------- library view ---------- */
 
 let query = '';
+let filter = 'all';
 let showHidden = false;
 
 function coverEl(book) {
@@ -414,14 +429,53 @@ function coverEl(book) {
   return img;
 }
 
-function progressLabel(book) {
+function progressLabel(book, withLeft) {
   const p = positions[book.id];
   if (!p) return '';
   if (p.done) return 'Finished';
-  return p.p > 0.005 ? `${Math.round(p.p * 100)}%` : '';
+  if (!(p.p > 0.005)) return '';
+  return `${Math.round(p.p * 100)}%` + (withLeft && p.left > 0 ? ` · ${fmtLong(p.left)} left` : '');
 }
 
-function bookCard(book) {
+// Applied after starred-first; the sort is stable, so ties keep title order.
+const SORTS = { title: 'Title', author: 'Author', recent: 'Recently played', added: 'Recently added' };
+const sortCmp = {
+  title: () => 0,
+  author: (a, b) => !a.author - !b.author || collator.compare(a.author, b.author),
+  recent: (a, b) => (positions[b.id]?.at || 0) - (positions[a.id]?.at || 0),
+  added: (a, b) => (b.added || '') < (a.added || '') ? -1 : (b.added || '') > (a.added || '') ? 1 : 0,
+};
+
+// Downloads in progress, by book id.
+const downloads = new Map();
+function offlineLabel(book) {
+  const job = downloads.get(book.id);
+  return job ? `Downloading ${Math.round(job.p * 100)}%` : offline.hasBook(book) ? 'Downloaded' : '';
+}
+async function startDownload(book) {
+  if (downloads.has(book.id)) return;
+  const job = { p: 0, ctl: new AbortController() };
+  downloads.set(book.id, job);
+  renderLibrary();
+  loadChapters(book); // read them while put.io is in reach
+  try {
+    await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; renderLibrary(); } }, job.ctl.signal);
+    toast(`“${book.title}” is ready to play offline.`);
+  } catch (err) {
+    // A cancelled download is thrown away; a failed one keeps its finished tracks so it can resume.
+    if (job.ctl.signal.aborted) await offline.remove(book).catch(() => {});
+    else toast(err?.name === 'QuotaExceededError' ? 'Not enough space on this device.' : 'Download stopped. Start it again to pick up where it left off.');
+  }
+  downloads.delete(book.id);
+  renderLibrary();
+}
+async function removeDownload(book) {
+  if (cur?.book.id === book.id) stopPlayback();
+  await offline.remove(book).catch(() => {});
+  renderLibrary();
+}
+
+function bookCard(book, listRow) {
   const p = positions[book.id];
   const starred = marks.starred.has(book.id);
   const hidden = marks.hidden.has(book.id);
@@ -433,11 +487,11 @@ function bookCard(book) {
       coverEl(book),
       h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
       h('span', { class: 'book-title' }, book.title),
-      h('span', { class: 'book-sub' }, [book.author, progressLabel(book)].filter(Boolean).join(' · '))),
+      h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow), offlineLabel(book)].filter(Boolean).join(' · '))),
     h('div', { class: 'book-tools' },
       mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
       mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
-      mark('image', 'Cover art', () => openCoverPicker(book))));
+      mark('more', 'More', () => openBookMenu(book))));
 }
 
 function showLibrary() {
@@ -472,22 +526,51 @@ function renderLibrary() {
   const hiddenCount = library.filter((b) => marks.hidden.has(b.id)).length;
   if (!hiddenCount) showHidden = false;
   const shown = showHidden ? library : library.filter((b) => !marks.hidden.has(b.id));
-  // Starred first; sort is stable, so each group keeps its title order.
+  const status = (b) => (positions[b.id]?.done ? 'done' : positions[b.id]?.p > 0.005 ? 'going' : 'new');
+  const keep = { all: () => true, starred: (b) => marks.starred.has(b.id), saved: offline.hasBook };
   const match = shown.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q))
-    .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id));
+    .filter(keep[filter] || ((b) => status(b) === filter))
+    .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id) || sortCmp[settings.sort](a, b));
   const going = q ? [] : shown
     .filter((b) => positions[b.id] && !positions[b.id].done && positions[b.id].p > 0.005)
     .sort((a, b) => positions[b.id].at - positions[a.id].at)
     .slice(0, 6);
   // Native replaceChildren prints null as text, unlike h().
   shelf.replaceChildren(
-    ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map(bookCard))] : []),
-    h('h2', { class: 'section' }, q ? `${match.length} found` : `All books`,
+    ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map((b) => bookCard(b)))] : []),
+    h('h2', { class: 'section' }, q || filter !== 'all' ? `${match.length} found` : `All books`,
       scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${shown.length}`),
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
-        showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null),
-    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map(bookCard)) : h('p', { class: 'empty' }, 'Nothing matches that.')
+        showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null,
+      h('button', { class: 'link', type: 'button', onclick: openSort }, `Sort: ${SORTS[settings.sort]}`)),
+    h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred'], ...(offline.supported ? [['saved', 'Downloaded']] : [])].map(([key, label]) =>
+      h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
+    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map((b) => bookCard(b, settings.list))) : h('p', { class: 'empty' }, 'Nothing matches that.')
   );
+}
+
+function openBookMenu(book) {
+  const p = positions[book.id];
+  sheet(book.title, (close) => [
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Progress'), h('small', {}, progressLabel(book, true) || 'Not started')),
+      h('span', { class: 'row' },
+        p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, 'Finished'),
+        p?.done || p?.p > 0 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, 'Start over') : null)),
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Cover art'), h('small', {}, 'Search for a different cover')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, 'Choose')),
+    offline.supported ? h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Offline'), h('small', {}, offlineLabel(book) || `Download to this device · ${Math.ceil(book.tracks.reduce((n, t) => n + t.size, 0) / 1e6)} MB`)),
+      downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, 'Cancel')
+        : offline.hasBook(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => { removeDownload(book); close(); } }, 'Remove')
+        : h('button', { class: 'btn', type: 'button', onclick: () => { startDownload(book); close(); } }, 'Download')) : null,
+  ]);
+}
+
+function openSort() {
+  sheet('Sort by', (close) => h('div', { class: 'chips' }, Object.entries(SORTS).map(([key, label]) =>
+    h('button', { type: 'button', class: key === settings.sort ? 'chip on' : 'chip', onclick: () => { settings.sort = key; saveSettings(); close(); renderLibrary(); } }, label))));
 }
 
 function openSettings() {
@@ -522,6 +605,8 @@ const cachedUrl = (id) => {
   return hit && Date.now() - hit.at < URL_TTL ? hit.url : null;
 };
 async function getUrl(id) {
+  const local = offline.has(id) && await offline.localUrl(id);
+  if (local) return local;
   const hit = cachedUrl(id);
   if (hit) return hit;
   const url = await api.fileUrl(id);
@@ -595,7 +680,7 @@ async function loadTrack(ti, time = 0, autoplay = false) {
   shownChapter = -1;
   refreshPlayer();
 
-  let url = cachedUrl(track.id);
+  let url = !offline.has(track.id) && cachedUrl(track.id);
   if (!url) {
     try { url = await getUrl(track.id); }
     catch (err) { if (ticket === loadTicket) failed(err); return; }
@@ -723,7 +808,7 @@ async function loadChapters(book) {
   }
 }
 
-/* ---------- positions: local, plus put.io config for other devices ---------- */
+/* ---------- positions and marks: local, plus put.io config for other devices ---------- */
 
 let lastSave = 0;
 let lastPush = 0;
@@ -735,6 +820,8 @@ function savePosition(force) {
   if (!force && t - lastSave < 5000) return;
   lastSave = t;
   positions[cur.book.id] = { t: cur.ti, s: Math.floor(audio.currentTime), at: t, p: +bookFraction().toFixed(4) };
+  const left = bookSecondsLeft();
+  if (left != null) positions[cur.book.id].left = Math.round(left * settings.speed);
   savePositions();
   if (force || t - lastPush > 30000) pushPosition(cur.book.id);
 }
@@ -742,13 +829,32 @@ function pushPosition(bookId) {
   lastPush = Date.now();
   api.setConfig('pos_' + bookId, positions[bookId]).catch(() => {});
 }
+// Set by hand from the book menu. A reset is stored, not deleted, so it wins over other devices.
+function setProgress(book, done) {
+  if (cur?.book.id === book.id) stopPlayback();
+  positions[book.id] = { t: 0, s: 0, at: Date.now(), p: done ? 1 : 0, ...(done && { done: true }) };
+  savePositions();
+  pushPosition(book.id);
+  renderLibrary();
+}
 async function pullPositions() {
   if (!api.hasToken()) return;
   let remote;
   try { remote = await api.getConfig(); } catch { return; }
   let changed = false;
+  let marked = false;
   for (const [key, value] of Object.entries(remote)) {
-    if (!key.startsWith('pos_') || !value || typeof value.at !== 'number') continue;
+    if (!value || typeof value.at !== 'number') continue;
+    if (key.startsWith('mark_')) {
+      const id = key.slice(5);
+      if (markAt[id] >= value.at) continue;
+      marks.starred[value.s ? 'add' : 'delete'](id);
+      marks.hidden[value.h ? 'add' : 'delete'](id);
+      markAt[id] = value.at;
+      marked = true;
+      continue;
+    }
+    if (!key.startsWith('pos_')) continue;
     const id = key.slice(4);
     if (positions[id] && positions[id].at >= value.at) continue;
     if (cur?.book.id === id && !audio.paused) continue;
@@ -760,7 +866,16 @@ async function pullPositions() {
       else { cur.ti = pos.t; pendingSeek = pos.s; refreshPlayer(); }
     }
   }
-  if (changed) { savePositions(); renderLibrary(); }
+  // Marks made before they synced have no time yet. Send them now that put.io's own have been applied.
+  for (const id of new Set([...marks.starred, ...marks.hidden])) {
+    if (markAt[id]) continue;
+    markAt[id] = Date.now();
+    pushMark(id);
+    marked = true;
+  }
+  if (marked) saveMarks();
+  if (changed) savePositions();
+  if (changed || marked) renderLibrary();
 }
 
 /* ---------- player UI ---------- */
@@ -1082,13 +1197,14 @@ function start() {
   showLibrary();
   const last = library.find((b) => b.id === store.get('last'));
   if (last && !cur && !positions[last.id]?.done) openBook(last, false);
-  rescan();
+  if (navigator.onLine) rescan();
   pullPositions();
 }
 
 function boot() {
   buildPlayer();
   setupMediaSession();
+  offline.init().then(renderLibrary, () => {});
   $('#player').inert = true;
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

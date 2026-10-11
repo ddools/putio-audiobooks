@@ -3,6 +3,7 @@ import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
 import * as offline from './offline.js';
+import { byName, collator, scan, trackTitle } from './scan.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -12,12 +13,6 @@ const CLIENT_ID = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '' : BA
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-// "Book I" and "Book 1" should sort together, so standalone roman numerals count as numbers.
-const ROMAN = { I: 1, V: 5, X: 10 };
-const unroman = (s) => s.replace(/\b[IVX]+\b/g, (r) =>
-  [...r].reduce((n, c, i) => n + (ROMAN[c] < ROMAN[r[i + 1]] ? -ROMAN[c] : ROMAN[c]), 0));
-const byName = (a, b) => collator.compare(unroman(a.name), unroman(b.name));
 
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
@@ -264,91 +259,13 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
 
 /* ---------- library scan ---------- */
 
-const AUDIO_EXT = /\.(mp3|m4b|m4a|aac|ogg|oga|opus|flac|wav)$/i;
-const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
-const DISC_DIR = /^(cd|disc|disk|part|volume|vol)[\s._-]*\d+$/i;
-const MAX_DEPTH = 4;
-
-const stripExt = (name) => name.replace(/\.[a-z0-9]{2,4}$/i, '');
-function tidy(name) {
-  let s = stripExt(name).replace(/_/g, ' ');
-  if (!/\s/.test(s)) s = s.replace(/\./g, ' ');
-  const bare = s.replace(/\s*[\[(][^\])]*[\])]/g, '').trim();
-  return (bare || s).replace(/\s+/g, ' ').trim();
-}
-function trackTitle(name, index) {
-  const s = tidy(name).replace(/^\d+\s*[-._)]*\s*/, '').trim();
-  return s && !/^\d+$/.test(s) ? s : `Part ${index + 1}`;
-}
-function pickCover(files) {
-  const images = files.filter((f) => IMAGE_EXT.test(f.name) && f.screenshot);
-  const named = images.find((f) => /cover|folder|front/i.test(f.name));
-  return (named || images[0])?.screenshot || null;
-}
-function makeBook(id, rawTitle, rawAuthor, files, cover) {
-  let title = tidy(rawTitle);
-  let author = rawAuthor ? tidy(rawAuthor) : '';
-  if (!author && title.includes(' - ')) {
-    const cut = title.indexOf(' - ');
-    author = title.slice(0, cut).trim();
-    title = title.slice(cut + 3).trim();
-  }
-  return {
-    id, title, author,
-    cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
-    tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
-    added: files.reduce((m, f) => (f.created_at > m ? f.created_at : m), ''),
-  };
-}
-
-async function pool(items, limit, fn) {
-  const queue = [...items];
-  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    while (queue.length) await fn(queue.shift());
-  }));
-}
-
-async function scanFolder(folder, parentName, depth, out) {
-  const isRoot = depth === 0;
-  const { files } = await api.listFiles(folder.id);
-  const dirs = files.filter((f) => f.file_type === 'FOLDER');
-  const discs = isRoot ? [] : dirs.filter((d) => DISC_DIR.test(d.name)).sort(byName);
-  let cover = pickCover(files);
-  let tracks = files.filter((f) => f.file_type !== 'FOLDER' && AUDIO_EXT.test(f.name)).sort(byName);
-  for (const disc of discs) {
-    const sub = (await api.listFiles(disc.id)).files;
-    tracks = tracks.concat(sub.filter((f) => AUDIO_EXT.test(f.name)).sort(byName));
-    cover = cover || pickCover(sub);
-  }
-
-  if (isRoot) {
-    for (const f of tracks) out.push(makeBook('f' + f.id, f.name, '', [f], null));
-  } else if (tracks.length) {
-    // MP3s (and friends) in one folder are one book. Each M4B is its own
-    // book, unless they are clearly numbered parts of the same thing.
-    const m4bs = tracks.filter((f) => /\.m4b$/i.test(f.name));
-    const rest = tracks.filter((f) => !/\.m4b$/i.test(f.name));
-    const numberedParts = m4bs.length > 1 && new Set(m4bs.map((f) => f.name.toLowerCase().replace(/\d+/g, '#'))).size === 1;
-    if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover));
-    if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover));
-    else if (!rest.length && m4bs.length === 1) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover));
-    else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover));
-  }
-
-  if (depth < MAX_DEPTH) {
-    const deeper = dirs.filter((d) => !discs.includes(d));
-    await pool(deeper, 4, (d) => scanFolder(d, isRoot ? '' : folder.name, depth + 1, out));
-  }
-}
-
 let scanning = false;
 async function rescan() {
   if (scanning || !settings.root) return;
   scanning = true;
   renderLibrary();
   try {
-    const found = [];
-    await scanFolder(settings.root, '', 0, found);
+    const found = await scan(settings.root, api.listFiles);
     const old = new Map(library.map((b) => [b.id, b]));
     for (const book of found) {
       const prev = old.get(book.id);

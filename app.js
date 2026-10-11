@@ -140,7 +140,10 @@ function toggleMark(kind, id) {
   markAt[id] = Date.now();
   saveMarks();
   pushMark(id);
+  const card = document.activeElement?.closest('[data-book]');
+  const at = card && { id: card.dataset.book, strip: !!card.closest('.strip'), i: [...card.querySelectorAll('button')].indexOf(document.activeElement) };
   renderLibrary();
+  if (at) $('#shelf')?.querySelectorAll(`${at.strip ? '.strip' : '.grid'} [data-book="${CSS.escape(at.id)}"] button`)[at.i]?.focus();
 }
 
 const audio = $('#audio');
@@ -170,6 +173,7 @@ function showConnect() {
     if (!id) { idInput.focus(); return toast('Enter your Client ID first.'); }
     settings.clientId = id;
     saveSettings();
+    store.set('connecting', true);
     location.href = api.authUrl(id, redirectUri);
   };
   const useToken = async () => {
@@ -263,9 +267,11 @@ let scanning = false;
 async function rescan() {
   if (scanning || !settings.root) return;
   scanning = true;
+  const root = settings.root;
   renderLibrary();
   try {
-    const found = await scan(settings.root, api.listFiles);
+    const found = await scan(root, api.listFiles);
+    if (settings.root !== root) { scanning = false; return rescan(); } // the folder changed mid-scan
     const old = new Map(library.map((b) => [b.id, b]));
     for (const book of found) {
       const prev = old.get(book.id);
@@ -375,7 +381,7 @@ async function startDownload(book) {
   renderLibrary();
   loadChapters(book); // read them while put.io is in reach
   try {
-    await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; renderLibrary(); } }, job.ctl.signal);
+    await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; refreshCard(library.find((b) => b.id === book.id) || book); } }, job.ctl.signal);
     toast(`“${book.title}” is ready to play offline.`);
   } catch (err) {
     // A cancelled download is thrown away; a failed one keeps its finished tracks so it can resume.
@@ -398,7 +404,7 @@ function bookCard(book, listRow) {
   const mark = (name, label, onclick, cls = '') =>
     h('button', { class: 'mark ' + cls, type: 'button', 'aria-label': `${label}: ${book.title}`, title: label, onclick, html: icon(name) });
   const flip = (kind) => () => toggleMark(kind, book.id);
-  return h('div', { class: 'book' + (hidden ? ' is-hidden' : '') },
+  return h('div', { class: 'book' + (hidden ? ' is-hidden' : ''), 'data-book': book.id },
     h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
       coverEl(book),
       h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
@@ -408,6 +414,17 @@ function bookCard(book, listRow) {
       mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
       mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
       mark('more', 'More', () => openBookMenu(book))));
+}
+
+// Swap one book's cards in place, so keyboard focus and the strip's scroll survive.
+function refreshCard(book) {
+  for (const old of $('#shelf')?.querySelectorAll(`[data-book="${CSS.escape(book.id)}"]`) || []) {
+    const had = old.contains(document.activeElement);
+    const i = [...old.querySelectorAll('button')].indexOf(document.activeElement);
+    const fresh = bookCard(book, !!old.closest('.grid.list'));
+    old.replaceWith(fresh);
+    if (had && i >= 0) fresh.querySelectorAll('button')[i].focus();
+  }
 }
 
 function showLibrary() {
@@ -1129,13 +1146,15 @@ function boot() {
   }
   // Coming back from put.io: the token arrives in the URL fragment.
   const fragment = new URLSearchParams(location.hash.slice(1));
-  if (fragment.get('access_token')) {
-    store.set('token', fragment.get('access_token'));
+  if (fragment.get('access_token') || fragment.get('error')) {
+    // Only accept a token this app asked for; a crafted link must not replace the session.
+    const asked = store.get('connecting');
+    store.del('connecting');
     history.replaceState(null, '', location.pathname + location.search);
-  } else if (fragment.get('error')) {
-    toast('put.io didn’t grant access.');
-    history.replaceState(null, '', location.pathname + location.search);
-  }
+    if (asked && fragment.get('access_token')) store.set('token', fragment.get('access_token'));
+    else if (asked) toast('put.io didn’t grant access.');
+  } else store.del('connecting'); // an abandoned sign-in must not leave the door open
+
   if (store.get('token')) start();
   else showConnect();
 }

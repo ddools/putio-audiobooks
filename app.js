@@ -74,7 +74,6 @@ const ICONS = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
-  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
@@ -92,10 +91,9 @@ function fmt(sec) {
   return hrs ? `${hrs}:${String(min).padStart(2, '0')}:${s}` : `${min}:${s}`;
 }
 function fmtLong(sec) {
-  sec = Math.max(0, Math.round(sec || 0));
-  const hrs = Math.floor(sec / 3600);
-  const min = Math.round((sec % 3600) / 60);
-  if (hrs && min === 60) return `${hrs + 1}h`;
+  const m = Math.round(Math.max(0, sec || 0) / 60);
+  const hrs = Math.floor(m / 60);
+  const min = m % 60;
   if (hrs) return min ? `${hrs}h ${min}m` : `${hrs}h`;
   return min ? `${min}m` : 'under a minute';
 }
@@ -590,7 +588,7 @@ function openSettings() {
 
 /* ---------- playback engine ---------- */
 
-let cur = null;           // { book, ti, started, loaded, retries }
+let cur = null;           // { book, ti, started, loaded, retries, list }
 let pendingSeek = 0;      // where to land once the track's metadata arrives
 let lastGood = 0;         // last known position, for recovering from stream errors
 let loadTicket = 0;
@@ -621,7 +619,7 @@ const trackDuration = () => (cur?.loaded && Number.isFinite(audio.duration) ? au
 
 function chapterList() {
   const book = cur.book;
-  if (multi()) return book.tracks.map((t, i) => ({ title: trackTitle(t.name, i), track: i }));
+  if (multi()) return (cur.list?.book === book ? cur.list : cur.list = { book, items: book.tracks.map((t, i) => ({ title: trackTitle(t.name, i), track: i })) }).items;
   return book.chapters?.length > 1 ? book.chapters : null;
 }
 function chapterIndex() {
@@ -1186,7 +1184,7 @@ addEventListener('pagehide', () => savePosition(true));
 setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
 
 addEventListener('keydown', (e) => {
-  if (!cur || e.target.closest('input, dialog')) return;
+  if (!cur || e.target.closest('input, dialog, button, a')) return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
   else if (e.code === 'ArrowLeft') skip(-settings.back);
   else if (e.code === 'ArrowRight') skip(settings.fwd);

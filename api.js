@@ -52,7 +52,7 @@ export async function listFiles(parentId) {
     files.push(...(next.files || []));
     cursor = next.cursor;
   }
-  return { files, parent: first.parent };
+  return { files };
 }
 
 // A direct, streamable URL for a file. Tied to the caller's IP address.

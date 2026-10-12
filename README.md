@@ -2,6 +2,8 @@
 
 An audiobook player PWA for your put.io files. Static files only. No build step, no backend.
 
+This is an unofficial app. It is not affiliated with or endorsed by put.io.
+
 ## Use it
 
 1. Open https://putio-audiobooks.vercel.app and tap "Connect put.io".
@@ -56,7 +58,7 @@ On localhost the Client ID in `config.js` is ignored, because put.io only accept
 
 ## Privacy
 
-The app talks to put.io straight from your browser. Your token, listening positions, stars and hidden books stay on your device and in your put.io account. Downloaded books stay in the browser's storage on the device. The one exception is cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.
+Connecting gives the app a token for your whole put.io account, not just one folder. The app only lists files, reads audio and stores its own settings. The app talks to put.io straight from your browser. Your token, listening positions, stars and hidden books stay on your device and in your put.io account. Downloaded books stay in the browser's storage on the device. The one exception is cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.
 
 ## Not in this version
 
@@ -73,7 +75,11 @@ The app talks to put.io straight from your browser. Your token, listening positi
 - `sw.js` service worker
 - `offline.js` downloaded books
 - `scan.js` turns put.io folders into books
-- `test/` checks, run each with `node test/<name>.test.mjs`
+- `test/` checks, run them all with `node --test`
 - `styles.css` styles
 - `config.js` put.io Client ID
 - `manifest.webmanifest` and `icons/` install metadata
+
+## Licence
+
+MIT. See `LICENSE`.

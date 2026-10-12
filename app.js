@@ -211,7 +211,7 @@ function showConnect() {
               h('summary', {}, 'Use an OAuth token instead'),
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'This app talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'))
+      h('p', { class: 'fine' }, 'An unofficial app, not affiliated with put.io. It talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'))
   );
 }
 
@@ -480,8 +480,7 @@ function showLibrary() {
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
     h('div', { id: 'shelf' }),
     h('footer', { class: 'fine foot' },
-      h('a', { href: 'https://www.nytimes.com/books/best-sellers/audio-fiction/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'),
-      h('a', { href: 'https://chill.institute', target: '_blank', rel: 'noopener' }, 'chill.institute'))
+      h('a', { href: 'https://www.nytimes.com/books/best-sellers/audio-fiction/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'))
   );
   renderLibrary();
 }

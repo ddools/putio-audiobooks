@@ -480,7 +480,7 @@ function showLibrary() {
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
     h('div', { id: 'shelf' }),
     h('footer', { class: 'fine foot' },
-      h('a', { href: 'https://www.nytimes.com/books/best-sellers/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'),
+      h('a', { href: 'https://www.nytimes.com/books/best-sellers/audio-fiction/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'),
       h('a', { href: 'https://chill.institute', target: '_blank', rel: 'noopener' }, 'chill.institute'))
   );
   renderLibrary();

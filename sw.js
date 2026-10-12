@@ -5,7 +5,7 @@ const CACHE = PREFIX + 'v10';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'offline.js', 'scan.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-  'icons/apple-touch-icon.png', 'icons/connect-art.svg',
+  'icons/apple-touch-icon.png', 'icons/connect-art.svg', 'icons/chill.png',
 ];
 
 self.addEventListener('install', (e) => {

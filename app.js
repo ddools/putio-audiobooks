@@ -72,10 +72,18 @@ const ICONS = {
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   github: '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
+  nyt: '<path d="M21.272,14.815h-0.098c-0.747,2.049-2.335,3.681-4.363,4.483v-4.483l2.444-2.182l-2.444-2.182V7.397 c2.138,0.006,3.885-1.703,3.927-3.84c0-2.629-2.509-3.556-3.927-3.556c-0.367-0.007-0.734,0.033-1.091,0.12v0.131h0.556 c0.801-0.141,1.565,0.394,1.706,1.195C17.99,1.491,17.996,1.537,18,1.583c-0.033,0.789-0.7,1.401-1.488,1.367 c-0.02-0.001-0.041-0.002-0.061-0.004c-2.444,0-5.323-1.985-8.454-1.985C5.547,0.83,3.448,2.692,3.284,5.139 C3.208,6.671,4.258,8.031,5.76,8.346v-0.12C5.301,7.931,5.041,7.407,5.084,6.862c0.074-1.015,0.957-1.779,1.973-1.705 C7.068,5.159,7.08,5.16,7.091,5.161c2.629,0,6.872,2.182,9.501,2.182h0.098v3.142l-2.444,2.182l2.444,2.182v4.549 c-0.978,0.322-2.003,0.481-3.033,0.469c-1.673,0.084-3.318-0.456-4.614-1.516l4.429-1.985V7.451l-6.196,2.727 c0.592-1.75,1.895-3.168,3.589-3.905V6.175c-4.516,1.004-8.138,4.243-8.138,8.705c0,5.193,4.025,9.12,9.818,9.12 c6.011,0,8.727-4.363,8.727-8.814V14.815z M8.858,18.186c-1.363-1.362-2.091-3.235-2.007-5.16c-0.016-0.88,0.109-1.756,0.371-2.596 l2.051-0.938v8.476L8.858,18.186z" fill="currentColor" stroke="none"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
 };
 const icon = (name) =>
   `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+const iconLink = (name, label, href) =>
+  h('a', { class: 'icon-btn', href, target: '_blank', rel: 'noopener', 'aria-label': label, title: label, html: icon(name) });
+const siteFooter = () => h('footer', { class: 'fine foot' },
+  iconLink('github', 'Source on GitHub', 'https://github.com/ddools/putio-audiobooks'),
+  iconLink('nyt', 'NYT audio best sellers', 'https://www.nytimes.com/books/best-sellers/audio-fiction/'),
+  h('a', { class: 'icon-btn', href: 'https://chill.institute', target: '_blank', rel: 'noopener', 'aria-label': 'chill.institute', title: 'chill.institute' },
+    h('img', { src: 'icons/chill.png', alt: '', width: 28, height: 28 })));
 const iconBtn = (name, label, onclick, cls = '') =>
   h('button', { class: 'icon-btn ' + cls, type: 'button', 'aria-label': label, title: label, onclick, html: icon(name) });
 
@@ -236,7 +244,7 @@ function showConnect() {
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
       h('p', { class: 'fine' }, 'An unofficial app, not affiliated with put.io. It talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'),
-      h('a', { class: 'icon-btn fine', href: 'https://github.com/ddools/putio-audiobooks', target: '_blank', rel: 'noopener', 'aria-label': 'Source on GitHub', title: 'Source on GitHub', html: icon('github') }))
+      siteFooter())
   );
 }
 
@@ -269,6 +277,7 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
       h('div', { class: 'bar-title' }, h('small', {}, 'Where are your audiobooks?'), h('strong', {}, here.name)),
       h('span', { class: 'spacer' })),
     listEl,
+    siteFooter(),
     h('footer', { class: 'pick' }, h('button', { class: 'btn primary', type: 'button', onclick: choose }, `Use “${here.name}”`))
   );
   try {
@@ -505,8 +514,7 @@ function showLibrary() {
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
     h('div', { id: 'install' }),
     h('div', { id: 'shelf' }),
-    h('footer', { class: 'fine foot' },
-      h('a', { href: 'https://www.nytimes.com/books/best-sellers/audio-fiction/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'))
+    siteFooter()
   );
   renderInstall();
   renderLibrary();

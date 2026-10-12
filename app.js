@@ -71,6 +71,7 @@ const ICONS = {
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  github: '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
 };
 const icon = (name) =>
@@ -160,6 +161,29 @@ function failed(err) {
   }
 }
 
+/* ---------- install ---------- */
+
+let installEvent = null; // Chromium's deferred install prompt. iOS has none, so it gets instructions instead.
+const canInstall = () => !(matchMedia('(display-mode: standalone)').matches || navigator.standalone) && (installEvent || isIOS);
+async function install() {
+  if (!installEvent) return sheet('Add to Home Screen', () => h('p', {}, 'Tap the Share button in your browser, then “Add to Home Screen”.'));
+  installEvent.prompt();
+  await installEvent.userChoice;
+  installEvent = null; // the browser lets each prompt event be used once
+  renderInstall();
+}
+function renderInstall() {
+  const slot = $('#install');
+  if (!slot) return;
+  slot.replaceChildren(...(canInstall() && !store.get('installDismissed') ? [h('div', { class: 'setting install' },
+    h('div', {}, h('strong', {}, 'Install the app'), h('small', {}, 'Add it to your home screen')),
+    h('span', { class: 'row' },
+      h('button', { class: 'btn primary', type: 'button', onclick: install }, 'Install'),
+      iconBtn('x', 'Dismiss', () => { store.set('installDismissed', true); renderInstall(); })))] : []));
+}
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; renderInstall(); });
+addEventListener('appinstalled', () => { installEvent = null; renderInstall(); });
+
 /* ---------- connect ---------- */
 
 function showConnect() {
@@ -211,7 +235,8 @@ function showConnect() {
               h('summary', {}, 'Use an OAuth token instead'),
               h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
                 tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'An unofficial app, not affiliated with put.io. It talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'))
+      h('p', { class: 'fine' }, 'An unofficial app, not affiliated with put.io. It talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'),
+      h('a', { class: 'icon-btn fine', href: 'https://github.com/ddools/putio-audiobooks', target: '_blank', rel: 'noopener', 'aria-label': 'Source on GitHub', title: 'Source on GitHub', html: icon('github') }))
   );
 }
 
@@ -478,10 +503,12 @@ function showLibrary() {
         () => { settings.list = !settings.list; saveSettings(); showLibrary(); }),
       iconBtn('more', 'Settings', openSettings)),
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
+    h('div', { id: 'install' }),
     h('div', { id: 'shelf' }),
     h('footer', { class: 'fine foot' },
       h('a', { href: 'https://www.nytimes.com/books/best-sellers/audio-fiction/', target: '_blank', rel: 'noopener' }, 'NYT best sellers'))
   );
+  renderInstall();
   renderLibrary();
 }
 
@@ -557,6 +584,9 @@ function openSettings() {
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
+    canInstall() ? h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Install the app'), h('small', {}, 'Add it to your home screen')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); install(); } }, 'Install')) : null,
     isIOS ? h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Lock screen buttons'), h('small', {}, settings.lockChapters ? 'Previous and next chapter' : 'Skip back and forward')),
       h('button', { class: 'btn', type: 'button', onclick: () => { settings.lockChapters = !settings.lockChapters; saveSettings(); setupMediaSession(); close(); } }, 'Switch')) : null,

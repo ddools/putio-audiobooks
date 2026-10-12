@@ -27,7 +27,7 @@ This is an unofficial app. It is not affiliated with or endorsed by put.io.
 
 1. Open https://putio-audiobooks.vercel.app and tap "Connect put.io".
 2. Pick the folder your audiobooks live in.
-3. On your phone, use "Add to Home Screen" to install it.
+3. On your phone, tap **Install** in the app (or use "Add to Home Screen") to install it.
 
 ## What it does
 

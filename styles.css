@@ -387,6 +387,10 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.55); }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .setting div { display: grid; min-width: 0; }
 .setting small { color: var(--muted); font-size: 13.5px; }
+.switch { -webkit-appearance: none; appearance: none; flex: none; position: relative; width: 52px; height: 32px; margin: 6px 0; border-radius: 999px; background: var(--line); cursor: pointer; transition: background 0.15s; }
+.switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: transform 0.15s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::before { transform: translateX(20px); background: var(--on-accent); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

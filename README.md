@@ -83,6 +83,7 @@ Not in this version: embedded cover art from inside M4B files, and ID3 tags from
 - Connecting gives the app a token for your whole put.io account, not just one folder. The app only lists files, reads audio and stores its own settings.
 - Your token, listening positions, stars and hidden books stay on your device and in your put.io account. Downloaded books stay in the browser's storage on the device.
 - The one exception is cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.
+- The hosted copy counts page views with Vercel Web Analytics: no cookies, and nothing about your library or put.io account.
 
 ## Host your own copy
 

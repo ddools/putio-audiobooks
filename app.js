@@ -1,7 +1,8 @@
 import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
-import { CLIENT_ID as BAKED_ID, VERSION } from './config.js';
+import { CLIENT_ID as BAKED_ID, DEMO, VERSION } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
+import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
 import { byName, collator, scan, trackTitle } from './scan.js';
 
@@ -39,17 +40,19 @@ try {
     localStorage.removeItem(k);
   }
 } catch {}
+// The demo has its own storage, so trying it never touches a signed-in library.
+const NS = DEMO ? 'putio-audiobooks-demo:' : 'putio-audiobooks:';
 const store = {
   get(key, fallback) {
     try {
-      const v = localStorage.getItem('putio-audiobooks:' + key);
+      const v = localStorage.getItem(NS + key);
       return v == null ? fallback : JSON.parse(v);
     } catch { return fallback; }
   },
   set(key, value) {
-    try { localStorage.setItem('putio-audiobooks:' + key, JSON.stringify(value)); } catch {}
+    try { localStorage.setItem(NS + key, JSON.stringify(value)); } catch {}
   },
-  del(key) { try { localStorage.removeItem('putio-audiobooks:' + key); } catch {} },
+  del(key) { try { localStorage.removeItem(NS + key); } catch {} },
 };
 
 const ICONS = {
@@ -239,12 +242,14 @@ function showConnect() {
           h('details', {},
             h('summary', {}, 'Use an OAuth token instead'),
             h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
-              tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))));
+              tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
+    h('p', {}, h('a', { href: '?demo' }, 'No put.io account? Try the demo')));
   $('#landing-foot', landing).replaceChildren(siteFooter());
   app.replaceChildren(landing);
 }
 
 function signOut() {
+  if (DEMO) return void (location.href = location.pathname);
   stopPlayback();
   store.del('token');
   api.setToken(null);
@@ -595,8 +600,10 @@ function openSettings() {
       h('div', {}, h('strong', {}, 'Lock screen buttons'), h('small', {}, settings.lockChapters ? 'Previous and next chapter' : 'Skip back and forward')),
       h('button', { class: 'btn', type: 'button', onclick: () => { settings.lockChapters = !settings.lockChapters; saveSettings(); setupMediaSession(); close(); } }, 'Switch')) : null,
     h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
-      h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, 'Sign out')),
+      DEMO
+        ? h('div', {}, h('strong', {}, 'Demo'), h('small', {}, 'Sample books. Connect put.io to play your own.'))
+        : h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
+      h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, DEMO ? 'Exit demo' : 'Sign out')),
     h('p', { class: 'fine zipped' }, `Version ${VERSION}`),
   ]);
 }
@@ -1265,6 +1272,7 @@ addEventListener('keydown', (e) => {
 
 function start() {
   api.setToken(store.get('token'));
+  if (DEMO && !settings.root) settings.root = DEMO_ROOT;
   if (!settings.root) return showFolders();
   showLibrary();
   const last = library.find((b) => b.id === store.get('last'));
@@ -1292,7 +1300,7 @@ function boot() {
     else if (asked) toast('put.io didn’t grant access.');
   } else store.del('connecting'); // an abandoned sign-in must not leave the door open
 
-  if (store.get('token')) start();
+  if (DEMO || store.get('token')) start();
   else showConnect();
 }
 

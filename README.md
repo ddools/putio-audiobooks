@@ -29,6 +29,8 @@ This is an unofficial app. It is not affiliated with or endorsed by put.io.
 2. Pick the folder your audiobooks live in.
 3. On your phone, tap **Install** in the app (or use "Add to Home Screen") to install it.
 
+No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): three public-domain [LibriVox](https://librivox.org) recordings, served from `demo/audiobooks/`. It keeps its own storage and syncs nothing.
+
 ## What it does
 
 **Library**
@@ -113,6 +115,7 @@ Run the checks with `node --test`.
 | `scan.js` | Turns put.io folders into books |
 | `m4b.js` | Chapter and tag reader |
 | `covers.js` | Cover art search |
+| `demo.js`, `demo/` | The sample library behind `?demo` |
 | `offline.js` | Downloaded books |
 | `sw.js` | Service worker |
 | `styles.css` | Styles |

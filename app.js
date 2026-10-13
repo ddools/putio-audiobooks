@@ -157,6 +157,7 @@ function toggleMark(kind, id) {
 
 const audio = $('#audio');
 const app = $('#app');
+const landing = $('.connect'); // the landing page from index.html, kept so signing out can show it again
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const redirectUri = location.origin + location.pathname;
 
@@ -222,30 +223,25 @@ function showConnect() {
     }
   };
 
-  app.replaceChildren(
-    h('div', { class: 'connect' },
-      h('div', { class: 'brand' }, h('img', { src: 'icons/icon.svg', alt: '', width: 56, height: 56 }), h('span', {}, 'put.io Audiobooks')),
-      h('img', { class: 'art', src: 'icons/connect-art.svg', alt: '', width: 312, height: 88 }),
-      h('h1', {}, 'Your put.io audiobooks, played like audiobooks.'),
-      h('p', { class: 'lede' }, 'Chapters, speed, a sleep timer, and it remembers your place on every device.'),
-      CLIENT_ID
-        ? h('button', { class: 'btn primary', type: 'button', onclick: connect }, 'Connect put.io')
-        : h('div', { class: 'setup' },
-            h('ol', { class: 'steps' },
-              h('li', {}, 'Create an app at ',
-                h('a', { href: 'https://app.put.io/oauth/new', target: '_blank', rel: 'noopener' }, 'put.io → OAuth apps'),
-                '. Use this as the callback URL:',
-                h('button', { class: 'copy', type: 'button', onclick: () => navigator.clipboard?.writeText(redirectUri).then(() => toast('Callback URL copied.')) }, redirectUri)),
-              h('li', {}, 'Paste the Client ID it gives you.')),
-            h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); connect(); } },
-              idInput, h('button', { class: 'btn primary', type: 'submit' }, 'Connect')),
-            h('details', {},
-              h('summary', {}, 'Use an OAuth token instead'),
-              h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
-                tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-      h('p', { class: 'fine' }, 'An unofficial app, not affiliated with put.io. It talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.'),
-      siteFooter())
-  );
+  // The copy lives in index.html; only the controls are built here.
+  $('#cta', landing).replaceChildren(
+    CLIENT_ID
+      ? h('button', { class: 'btn primary', type: 'button', onclick: connect }, 'Connect put.io')
+      : h('div', { class: 'setup' },
+          h('ol', { class: 'steps' },
+            h('li', {}, 'Create an app at ',
+              h('a', { href: 'https://app.put.io/oauth/new', target: '_blank', rel: 'noopener' }, 'put.io → OAuth apps'),
+              '. Use this as the callback URL:',
+              h('button', { class: 'copy', type: 'button', onclick: () => navigator.clipboard?.writeText(redirectUri).then(() => toast('Callback URL copied.')) }, redirectUri)),
+            h('li', {}, 'Paste the Client ID it gives you.')),
+          h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); connect(); } },
+            idInput, h('button', { class: 'btn primary', type: 'submit' }, 'Connect')),
+          h('details', {},
+            h('summary', {}, 'Use an OAuth token instead'),
+            h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
+              tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))));
+  $('#landing-foot', landing).replaceChildren(siteFooter());
+  app.replaceChildren(landing);
 }
 
 function signOut() {

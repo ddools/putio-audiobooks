@@ -3,8 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>put.io Audiobooks</title>
-<meta name="description" content="An audiobook player for your put.io files.">
+<title>put.io Audiobooks: audiobook player for put.io with chapters and sync</title>
+<meta name="description" content="Play the audiobooks in your put.io account like audiobooks: M4B chapters, playback speed, sleep timer, offline downloads, and your place synced across devices. Free, installs from the browser.">
+<link rel="canonical" href="https://putio-audiobooks.vercel.app/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="put.io Audiobooks">
+<meta property="og:url" content="https://putio-audiobooks.vercel.app/">
+<meta property="og:title" content="put.io Audiobooks: audiobook player for put.io">
+<meta property="og:description" content="Your put.io audiobooks, played like audiobooks. Chapters, speed, a sleep timer, offline downloads, and your place synced across devices.">
+<meta property="og:image" content="https://putio-audiobooks.vercel.app/icons/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="put.io Audiobooks: your put.io audiobooks, played like audiobooks.">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f7f7f7" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,9 +27,64 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css">
+<script src="boot.js"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "put.io Audiobooks",
+  "url": "https://putio-audiobooks.vercel.app/",
+  "description": "An audiobook player for the files in your put.io account, with chapters, playback speed, a sleep timer, offline downloads and synced listening positions.",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript and a put.io account.",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "image": "https://putio-audiobooks.vercel.app/icons/og.png",
+  "screenshot": [
+    "https://putio-audiobooks.vercel.app/screenshots/library.png",
+    "https://putio-audiobooks.vercel.app/screenshots/player.png",
+    "https://putio-audiobooks.vercel.app/screenshots/list.png"
+  ],
+  "license": "https://opensource.org/licenses/MIT",
+  "codeRepository": "https://github.com/ddools/putio-audiobooks"
+}
+</script>
 </head>
 <body data-view="boot">
-<main id="app"></main>
+<!-- The landing page is in the HTML so crawlers and link previews can read it. app.js fills #cta and #landing-foot, and swaps the page out for signed-in users. -->
+<main id="app">
+<div class="connect">
+  <div class="brand"><img src="icons/icon.svg" alt="" width="56" height="56"><span>put.io Audiobooks</span></div>
+  <img class="art" src="icons/connect-art.svg" alt="" width="312" height="88">
+  <h1>Your put.io audiobooks, played like audiobooks.</h1>
+  <p class="lede">Chapters, speed, a sleep timer, and it remembers your place on every device.</p>
+  <div id="cta"></div>
+  <section class="about">
+    <div class="shots">
+      <img src="screenshots/library.webp" alt="Library as a cover grid, with a Keep listening shelf" width="780" height="1688" loading="lazy">
+      <img src="screenshots/player.webp" alt="Player with chapter, skip, speed and sleep timer controls" width="780" height="1688" loading="lazy">
+      <img src="screenshots/list.webp" alt="Library as a compact list showing time left" width="780" height="1688" loading="lazy">
+    </div>
+    <h2>An audiobook player for put.io</h2>
+    <p>put.io plays your files one at a time, like any other audio. This app turns the folder your audiobooks live in into a library, and plays each book as a book.</p>
+    <ul>
+      <li>Chapters from M4B files, or one chapter per MP3, with previous and next chapter.</li>
+      <li>Playback speed from 0.5x to 3.5x, and a sleep timer that can stop at the end of the chapter.</li>
+      <li>Remembers your place in every book and syncs it between your devices.</li>
+      <li>Download a book to listen offline.</li>
+      <li>Lock screen and headphone controls.</li>
+      <li>Search, covers, and a “Keep listening” shelf for books you have started.</li>
+    </ul>
+    <h2>Works with the folders you already have</h2>
+    <p>A folder of audio files becomes one book. CD and disc subfolders are merged, and multi-part M4Bs are joined. Plays MP3, M4B, M4A, AAC, OGG, Opus, FLAC and WAV.</p>
+    <h2>Free, with no server in between</h2>
+    <p>Install it from the browser on iPhone, Android or desktop. There is no account other than your put.io one, and the code is <a href="https://github.com/ddools/putio-audiobooks">open source on GitHub</a>.</p>
+  </section>
+  <p class="fine">An unofficial app, not affiliated with put.io. It talks to put.io directly from this device. Books without a cover are looked up by title on Apple and Open Library.</p>
+  <div id="landing-foot"></div>
+</div>
+</main>
 <div id="mini" hidden></div>
 <section id="player" aria-label="Now playing" hidden></section>
 <div id="toast" role="status" aria-live="polite"></div>

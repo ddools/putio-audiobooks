@@ -145,6 +145,13 @@ input::placeholder { color: var(--muted); }
 .connect summary { cursor: pointer; padding: 8px 0; font-size: 14px; }
 .connect details .row { margin-top: 8px; }
 .fine { color: var(--muted); font-size: 13px; }
+/* boot.js marks signed-in visitors, so the landing page doesn't flash before their library */
+.signed-in [data-view="boot"] .connect { display: none; }
+.about { display: grid; gap: 12px; margin-top: 24px; color: var(--muted); }
+.about h2 { margin-top: 12px; font: 600 20px/1.2 var(--sans); color: var(--text); }
+.about ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.shots img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); }
 .zipped { text-align: center; }
 .foot { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 24px 16px; }
 .foot .icon-btn { color: inherit; }

@@ -106,7 +106,8 @@ Run the checks with `node --test`.
 
 | File | What it holds |
 | --- | --- |
-| `index.html` | Page shell |
+| `index.html` | Page shell, landing page and search metadata |
+| `boot.js` | Hides the landing page from signed-in visitors before first paint |
 | `app.js` | UI and playback |
 | `api.js` | put.io client |
 | `scan.js` | Turns put.io folders into books |
@@ -117,6 +118,7 @@ Run the checks with `node --test`.
 | `styles.css` | Styles |
 | `config.js` | put.io Client ID |
 | `manifest.webmanifest`, `icons/` | Install metadata |
+| `robots.txt`, `sitemap.xml` | For search engines |
 | `test/` | Checks |
 
 ## Licence

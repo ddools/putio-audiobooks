@@ -4,7 +4,7 @@ import { CLIENT_ID as BAKED_ID, DEMO, VERSION } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
 import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
-import { byName, collator, scan, trackTitle } from './scan.js';
+import { byName, collator, scan, trackTitles } from './scan.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -64,6 +64,7 @@ const ICONS = {
   fwd: '<path d="M20 4v5h-5"/><path d="M19.4 9A8.5 8.5 0 1 0 20.5 12"/>',
   grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+  chapters: '<path d="M12 6h8M12 12h6M12 18h3"/><path d="M4 4h4.5v10l-2.25-2L4 14z"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   left: '<path d="M15 6l-6 6 6 6"/>',
@@ -104,6 +105,7 @@ function fmtLong(sec) {
   if (hrs) return min ? `${hrs}h ${min}m` : `${hrs}h`;
   return min ? `${min}m` : 'under a minute';
 }
+const fmtSize = (bytes) => (bytes > 999e6 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.ceil(bytes / 1e6)} MB`);
 
 let toastTimer;
 function toast(msg) {
@@ -484,7 +486,7 @@ function bookCard(book, listRow) {
   return h('div', { class: 'book' + (hidden ? ' is-hidden' : ''), 'data-book': book.id },
     h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
       coverEl(book),
-      h('span', { class: 'bar-thin' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
+      h('span', { class: 'bar-thin', style: p?.done || p?.p > 0.005 ? '' : 'visibility:hidden' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
       h('span', { class: 'book-title' }, book.title),
       h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow), offlineLabel(book)].filter(Boolean).join(' · '))),
     h('div', { class: 'book-tools' },
@@ -571,12 +573,12 @@ function openBookMenu(book) {
       h('div', {}, h('strong', {}, 'Progress'), h('small', {}, progressLabel(book, true) || 'Not started')),
       h('span', { class: 'row' },
         p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, 'Finished'),
-        p?.done || p?.p > 0 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, 'Start over') : null)),
+        p?.done || p?.p > 0.005 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, 'Start over') : null)),
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Cover art'), h('small', {}, 'Search for a different cover')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, 'Choose')),
     offline.supported ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Offline'), h('small', {}, offlineLabel(book) || `Download to this device · ${Math.ceil(book.tracks.reduce((n, t) => n + t.size, 0) / 1e6)} MB`)),
+      h('div', {}, h('strong', {}, 'Offline'), h('small', {}, offlineLabel(book) || `Download to this device · ${fmtSize(book.tracks.reduce((n, t) => n + t.size, 0))}`)),
       downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, 'Cancel')
         : offline.hasBook(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => { removeDownload(book); close(); } }, 'Remove')
         : h('button', { class: 'btn', type: 'button', onclick: () => { startDownload(book); close(); } }, 'Download')) : null,
@@ -644,7 +646,7 @@ const trackDuration = () => (cur?.loaded && Number.isFinite(audio.duration) ? au
 
 function chapterList() {
   const book = cur.book;
-  if (multi()) return (cur.list?.book === book ? cur.list : cur.list = { book, items: book.tracks.map((t, i) => ({ title: trackTitle(t.name, i), track: i })) }).items;
+  if (multi()) return (cur.list?.book === book ? cur.list : cur.list = { book, items: trackTitles(book.tracks.map((t) => t.name)).map((title, track) => ({ title, track })) }).items;
   return book.chapters?.length > 1 ? book.chapters : null;
 }
 function chapterIndex() {
@@ -926,7 +928,7 @@ function buildPlayer() {
     h('header', { class: 'p-top' },
       iconBtn('down', 'Close player', closePlayer),
       ui.bookText = h('span', { class: 'p-left' }),
-      iconBtn('list', 'Chapters', openChapters)),
+      iconBtn('chapters', 'Chapters', openChapters)),
     ui.cover = h('div', { class: 'p-cover' }),
     h('div', { class: 'p-meta' }, ui.title = h('h2'), ui.author = h('p')),
     ui.chapter = h('button', { class: 'p-chapter', type: 'button', onclick: openChapters }),
@@ -939,8 +941,7 @@ function buildPlayer() {
       iconBtn('next', 'Next chapter', nextChapter)),
     h('div', { class: 'p-tools' },
       ui.speed = h('button', { class: 'tool', type: 'button', onclick: openSpeed }, ui.speedValue = h('b'), h('small', {}, 'Speed')),
-      ui.sleep = h('button', { class: 'tool', type: 'button', onclick: openSleep }, h('b', { html: icon('moon') }), ui.sleepValue = h('small'))),
-    ui.bookBar = h('div', { class: 'p-bookbar' }, h('i'))
+      ui.sleep = h('button', { class: 'tool', type: 'button', onclick: openSleep }, h('b', { html: icon('moon') }), ui.sleepValue = h('small')))
   );
 
   const mini = $('#mini');
@@ -1003,9 +1004,8 @@ function tick() {
 
   const frac = bookFraction();
   const left = bookSecondsLeft();
-  ui.bookBar.firstChild.style.width = `${frac * 100}%`;
   ui.miniBar.firstChild.style.width = `${frac * 100}%`;
-  setText(ui.bookText, left == null ? '' : `${multi() ? 'About ' : ''}${fmtLong(left)} left`);
+  setText(ui.bookText, left == null ? '' : `${Math.round(frac * 100)}% · ${multi() ? 'About ' : ''}${fmtLong(left)} left`);
 
   const playing = !audio.paused && cur.started;
   if (ui.playing !== playing) {
@@ -1265,10 +1265,12 @@ addEventListener('pagehide', () => savePosition(true));
 setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
 
 addEventListener('keydown', (e) => {
-  if (!cur || e.target.closest('input, dialog, button, a')) return;
+  if (!cur || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, dialog, button, a')) return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-  else if (e.code === 'ArrowLeft') skip(-settings.back);
-  else if (e.code === 'ArrowRight') skip(settings.fwd);
+  else if (e.code === 'ArrowLeft') e.shiftKey ? prevChapter() : skip(-settings.back);
+  else if (e.code === 'ArrowRight') e.shiftKey ? nextChapter() : skip(settings.fwd);
+  else if (e.key === '[') setSpeed(settings.speed - 0.05);
+  else if (e.key === ']') setSpeed(settings.speed + 0.05);
 });
 
 /* ---------- boot ---------- */

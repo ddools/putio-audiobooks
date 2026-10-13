@@ -1,6 +1,6 @@
 // Run with: node test/scan.test.mjs
 import assert from 'node:assert/strict';
-import { scan, trackTitle } from '../scan.js';
+import { scan, trackTitle, trackTitles } from '../scan.js';
 
 // A fake put.io: folder id -> its files. Listings answer a tick later, so overlap can be counted.
 let nextId = 1;
@@ -61,6 +61,18 @@ assert.deepEqual(archives.sort(), ['Zipped Book.RAR', 'extras.zip']);
 
 assert.equal(trackTitle('03 - The Storm.mp3', 2), 'The Storm');
 assert.equal(trackTitle('03.mp3', 2), 'Part 3');
+
+// The book's name in front of every track number is dropped; a shared word that is the whole name stays.
+assert.deepEqual(trackTitles(['Network Effect-09 Chapter 9.mp3', 'Network Effect-10 Chapter 10.mp3']), ['Chapter 9', 'Chapter 10']);
+assert.deepEqual(trackTitles(['Chapter 1.mp3', 'Chapter 2.mp3']), ['Chapter 1', 'Chapter 2']);
+assert.deepEqual(trackTitles(['Chapter One.mp3', 'Chapter Two.mp3']), ['Chapter One', 'Chapter Two']);
+assert.deepEqual(trackTitles(['01 Intro.mp3', '02.mp3']), ['Intro', 'Part 2']);
+assert.deepEqual(trackTitles(['Only.mp3']), ['Only']);
+
+// A folder named "Author - Year - Series, N - Title" is read in full, whatever its parent is called.
+const series = (await scan(dir('Root', dir('Audiobooks', dir('Martha Wells - 2020 - Murderbot Diaries, 5 - Network Effect', file('a.mp3')))), listFiles))[0];
+assert.equal(series.title, 'Network Effect');
+assert.equal(series.author, 'Martha Wells · Murderbot Diaries #5');
 
 // A wide, nested tree never has more than 4 listings in flight.
 const wide = (depth) => dir('d', ...Array.from({ length: 6 }, () => (depth ? wide(depth - 1) : file('a.mp3'))));

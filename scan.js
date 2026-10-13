@@ -24,6 +24,16 @@ export function trackTitle(name, index) {
   const s = tidy(name).replace(/^\d+\s*[-._)]*\s*/, '').trim();
   return s && !/^\d+$/.test(s) ? s : `Part ${index + 1}`;
 }
+// A book's track titles. "Network Effect-01 Chapter 1" becomes "Chapter 1": whatever every
+// file says before its number goes, unless that would leave a track with no name at all.
+export function trackTitles(names) {
+  let n = 0;
+  while (names.length > 1 && names[0][n] && names.every((s) => s[n] === names[0][n])) n++;
+  while (/\d/.test(names[0][n - 1] || '')) n--;
+  const cut = names.map((s, i) => trackTitle(s.slice(n), i));
+  const safe = names.every((s) => /\d/.test(s[n] || '')) && !cut.some((t, i) => t === `Part ${i + 1}`);
+  return safe ? cut : names.map(trackTitle);
+}
 function pickCover(files) {
   const images = files.filter((f) => IMAGE_EXT.test(f.name) && f.screenshot);
   const named = images.find((f) => /cover|folder|front/i.test(f.name));
@@ -32,7 +42,12 @@ function pickCover(files) {
 function makeBook(id, rawTitle, rawAuthor, files, cover) {
   let title = tidy(rawTitle);
   let author = rawAuthor ? tidy(rawAuthor) : '';
-  if (!author && title.includes(' - ')) {
+  // "Author - 2020 - Series, 5 - Title" says more than the parent folder does.
+  const full = title.match(/^(.+?) - \d{4} - (.+?),? (\d+) - (.+)$/);
+  if (full) {
+    author = `${full[1]} · ${full[2]} #${full[3]}`;
+    title = full[4];
+  } else if (!author && title.includes(' - ')) {
     const cut = title.indexOf(' - ');
     author = title.slice(0, cut).trim();
     title = title.slice(cut + 3).trim();

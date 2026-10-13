@@ -1279,7 +1279,7 @@ function start() {
   if (!settings.root) return showFolders();
   showLibrary();
   const last = library.find((b) => b.id === store.get('last'));
-  if (last && !cur && !positions[last.id]?.done) openBook(last, false);
+  if (last && !cur && !positions[last.id]?.done) { openBook(last, false); openPlayer(); }
   if (navigator.onLine) rescan();
   pullPositions();
 }

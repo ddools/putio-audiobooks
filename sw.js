@@ -1,9 +1,9 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v12';
+const CACHE = PREFIX + 'v13';
 const SHELL = [
-  './', 'index.html', 'styles.css', 'boot.js', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'offline.js', 'scan.js',
+  './', 'index.html', 'styles.css', 'boot.js', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'demo.js', 'offline.js', 'scan.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'icons/apple-touch-icon.png', 'icons/connect-art.svg', 'icons/chill.png',
 ];
@@ -22,7 +22,9 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  // The demo's audio is too big for the shell cache; offline.js saves it when a book is downloaded.
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/demo/')) return;
   // Stale-while-revalidate: answer from cache, refresh in the background.
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {

@@ -1,7 +1,10 @@
 // Books saved on this device, for listening without a connection.
 // Each track is one entry in its own Cache, keyed by its put.io file id.
 // shortcut: downloads only run while the app is open, move to Background Fetch if people need to leave mid-download.
-const CACHE = 'putio-audiobooks-audio';
+import { DEMO } from './config.js';
+
+// The demo keeps its own cache: its library must never count as the real one when stale downloads are dropped.
+const CACHE = DEMO ? 'putio-audiobooks-demo-audio' : 'putio-audiobooks-audio';
 const key = (id) => `offline/${id}`;
 // Safari picks a decoder from the type, and put.io serves some audio as octet-stream.
 const TYPES = { mp3: 'audio/mpeg', m4b: 'audio/mp4', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', wav: 'audio/wav' };

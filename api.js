@@ -1,10 +1,13 @@
 // Thin put.io API v2 client. The API is CORS-enabled, so this runs
 // straight from the browser with no backend.
+import { DEMO } from './config.js';
+import * as demo from './demo.js';
+
 const API = 'https://api.put.io/v2';
 
 let token = null;
 export const setToken = (t) => { token = t || null; };
-export const hasToken = () => !!token;
+export const hasToken = () => DEMO || !!token;
 
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -44,6 +47,7 @@ export const accountInfo = () => call('/account/info');
 
 // Every file in a folder, following the cursor past 1000 items.
 export async function listFiles(parentId) {
+  if (DEMO) return { files: demo.list(parentId) };
   const first = await call('/files/list', { params: { parent_id: parentId, per_page: 1000 } });
   const files = first.files || [];
   let cursor = first.cursor;
@@ -56,9 +60,9 @@ export async function listFiles(parentId) {
 }
 
 // A direct, streamable URL for a file. Tied to the caller's IP address.
-export const fileUrl = async (id) => (await call(`/files/${id}/url`)).url;
+export const fileUrl = async (id) => DEMO ? demo.url(id) : (await call(`/files/${id}/url`)).url;
 
 // Per-app key/value storage on put.io. Used to sync listening positions.
-export const getConfig = async () => (await call('/config')).config || {};
-export const setConfig = (key, value) =>
-  call(`/config/${encodeURIComponent(key)}`, { method: 'PUT', json: { value } });
+export const getConfig = async () => DEMO ? {} : (await call('/config')).config || {};
+export const setConfig = async (key, value) =>
+  DEMO ? null : call(`/config/${encodeURIComponent(key)}`, { method: 'PUT', json: { value } });

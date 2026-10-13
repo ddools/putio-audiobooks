@@ -601,9 +601,9 @@ function openSettings() {
     canInstall() ? h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'Install the app'), h('small', {}, 'Add it to your home screen')),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); install(); } }, 'Install')) : null,
-    isIOS ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Lock screen buttons'), h('small', {}, settings.lockChapters ? 'Previous and next chapter' : 'Skip back and forward')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { settings.lockChapters = !settings.lockChapters; saveSettings(); setupMediaSession(); close(); } }, 'Switch')) : null,
+    isIOS ? h('label', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Chapter buttons on lock screen'), h('small', {}, 'Instead of skip back and forward')),
+      h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.lockChapters, onchange: (e) => { settings.lockChapters = e.target.checked; saveSettings(); setupMediaSession(); } })) : null,
     h('div', { class: 'setting' },
       DEMO
         ? h('div', {}, h('strong', {}, 'Demo'), h('small', {}, 'Sample books. Connect put.io to play your own.'))

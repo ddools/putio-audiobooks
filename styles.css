@@ -68,6 +68,8 @@ h1, h2, h3, p { margin: 0; }
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.danger { color: var(--danger); }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+.btn.outline { background: none; border-color: var(--accent); color: var(--accent-ink); }
 .btn:active, .chip:active, .book-open:active .cover { transform: scale(0.97); }
 
 .icon-btn {
@@ -131,7 +133,10 @@ input::placeholder { color: var(--muted); }
 .connect .art { width: 100%; height: auto; }
 .connect h1 { font: 600 clamp(30px, 8vw, 40px)/1.1 var(--sans); letter-spacing: -0.015em; text-wrap: balance; }
 .lede { color: var(--muted); font-size: 17px; }
-.setup { display: grid; gap: 16px; }
+#cta { display: flex; flex-wrap: wrap; gap: 8px; }
+/* tighter than .btn so both buttons fit on one line of the 440px column */
+#cta > .btn { padding: 0 12px; }
+.setup { display: grid; gap: 16px; flex: 1 0 100%; }
 .steps { margin: 0; padding: 0 0 0 20px; display: grid; gap: 12px; color: var(--muted); }
 .steps li::marker { color: var(--accent-ink); font-weight: 700; }
 .copy {
@@ -211,6 +216,7 @@ input::placeholder { color: var(--muted); }
 .section .link + .link { margin-right: 14px; }
 .install { margin-top: 16px; padding: 12px 6px 12px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .install .row { align-items: center; }
+.install > a.btn { margin-right: 10px; flex: none; }
 .filters { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 16px; padding: 0 16px; scrollbar-width: none; }
 .filters::-webkit-scrollbar { display: none; }
 .filters .chip { flex: none; padding: 0 14px; white-space: nowrap; }

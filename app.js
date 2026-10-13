@@ -187,6 +187,9 @@ async function install() {
 function renderInstall() {
   const slot = $('#install');
   if (!slot) return;
+  if (DEMO) return slot.replaceChildren(h('div', { class: 'setting install' },
+    h('div', {}, h('strong', {}, 'Have a put.io account?'), h('small', {}, 'Log in to listen to the audiobooks stored there')),
+    h('a', { class: 'btn primary', href: location.pathname }, 'Log in')));
   slot.replaceChildren(...(canInstall() && !store.get('installDismissed') ? [h('div', { class: 'setting install' },
     h('div', {}, h('strong', {}, 'Install the app'), h('small', {}, 'Add it to your home screen')),
     h('span', { class: 'row' },
@@ -243,7 +246,7 @@ function showConnect() {
             h('summary', {}, 'Use an OAuth token instead'),
             h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
               tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-    h('p', {}, h('a', { href: '?demo' }, 'No put.io account? Try the demo')));
+    h('a', { class: 'btn outline', href: '?demo' }, 'No put.io account? Try the demo'));
   $('#landing-foot', landing).replaceChildren(siteFooter());
   app.replaceChildren(landing);
 }

@@ -1,6 +1,6 @@
 import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
-import { CLIENT_ID as BAKED_ID } from './config.js';
+import { CLIENT_ID as BAKED_ID, VERSION } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
 import * as offline from './offline.js';
 import { byName, collator, scan, trackTitle } from './scan.js';
@@ -601,6 +601,7 @@ function openSettings() {
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
       h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, 'Sign out')),
+    h('p', { class: 'fine zipped' }, `Version ${VERSION}`),
   ]);
 }
 

@@ -1,0 +1,38 @@
+Your put.io audiobooks, played like audiobooks.
+
+put.io plays your files one at a time, like any other audio. This app turns the folder your audiobooks live in into a library, and plays each book as a book: with chapters, speed control, a sleep timer, and your place remembered on every device.
+
+LIBRARY
+• Cover grid or compact list, with the time left in each book you have started
+• A "Keep listening" shelf for books in progress
+• Search, plus filters for in progress, not started, finished, starred and downloaded
+• Sort by title, author, recently played or recently added
+• Star a book to move it to the front, or hide it from the shelf
+
+PLAYER
+• Chapters from M4B files, or one chapter per MP3, with previous and next chapter
+• Skip back 15 seconds or forward 30
+• Speed from 0.5x to 3.5x, remembered between sessions
+• Sleep timer from 5 to 60 minutes, or at the end of the chapter
+• Lock screen, notification and headphone controls
+• Rewinds 10 seconds when you come back after a break
+
+SYNC AND OFFLINE
+• Your place in every book, your stars and hidden books sync between devices through your own put.io account
+• Download a book to listen without a connection
+
+WORKS WITH THE FOLDERS YOU ALREADY HAVE
+• A folder of audio files becomes one book; CD and disc subfolders are merged
+• Multi-part M4Bs are joined into one book
+• Authors are read from Author/Book folders or "Author - Title" names
+• Covers come from images in the folder, or are looked up for you
+• Plays MP3, M4B, M4A, AAC, OGG, Opus, FLAC and WAV
+
+PRIVATE BY DESIGN
+The app talks to put.io directly from your phone. There is no server in between and no account other than your put.io one. No ads, no cookies.
+
+No put.io account? Tap "Try the demo" to listen to three public-domain LibriVox recordings.
+
+Free and open source: github.com/ddools/putio-audiobooks
+
+This is an unofficial app. It is not affiliated with or endorsed by put.io.

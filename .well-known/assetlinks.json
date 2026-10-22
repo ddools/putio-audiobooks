@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.vercel.putio_audiobooks",
+    "sha256_cert_fingerprints": ["09:0C:1A:2F:2F:CA:2D:17:AE:4C:33:E2:85:4F:F7:57:C4:FC:91:6A:97:86:84:2B:59:DD:70:38:EB:5E:1B:54"]
+  }
+}]

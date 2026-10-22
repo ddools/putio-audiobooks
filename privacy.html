@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy: put.io Audiobooks</title>
+<meta name="description" content="What put.io Audiobooks stores, where, and what it sends to whom.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'">
+<link rel="canonical" href="https://putio-audiobooks.vercel.app/privacy.html">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="connect">
+  <div class="brand"><img src="icons/icon.svg" alt="" width="56" height="56"><span>put.io Audiobooks</span></div>
+  <h1>Privacy</h1>
+  <section class="about">
+    <p>This applies to the web app at putio-audiobooks.vercel.app and the Android app, which opens the same web app.</p>
+    <h2>No server in between</h2>
+    <p>The app talks to put.io straight from your device. There is no server of ours that sees your files, your token or what you listen to.</p>
+    <h2>What is stored, and where</h2>
+    <ul>
+      <li>Connecting gives the app a token for your whole put.io account, not just one folder. The app only lists files, reads audio and stores its own settings.</li>
+      <li>Your token stays on your device.</li>
+      <li>Listening positions, stars and hidden books are kept on your device and synced through your put.io account’s per-app storage.</li>
+      <li>Downloaded books are kept in the app’s storage on that device, until you remove them from a book’s menu or clear the app’s data.</li>
+    </ul>
+    <h2>What is sent elsewhere</h2>
+    <ul>
+      <li>Cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.</li>
+      <li>Page views are counted with Vercel Web Analytics: no cookies, and nothing about your library or put.io account.</li>
+    </ul>
+    <p>Nothing is sold or shared for advertising.</p>
+    <h2>Contact</h2>
+    <p>Questions or problems: <a href="https://github.com/ddools/putio-audiobooks/issues">open an issue on GitHub</a>.</p>
+  </section>
+  <p class="fine">An unofficial app, not affiliated with put.io. <a href="./">Back to the app</a></p>
+</main>
+</body>
+</html>

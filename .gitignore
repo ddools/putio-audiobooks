@@ -3,3 +3,12 @@
 demo/**/*.zip
 .claude
 .gstack/
+# Android: the signing key must never be committed. Its password is in the macOS Keychain (putio-audiobooks-keystore).
+*.keystore
+*.jks
+android/.gradle/
+android/**/build/
+android/local.properties
+android/*.apk
+android/*.aab
+android/*.idsig

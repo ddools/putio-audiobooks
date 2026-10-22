@@ -104,6 +104,15 @@ On localhost the Client ID in `config.js` is ignored, because put.io only accept
 
 Run the checks with `node --test`.
 
+## Android app
+
+`android/` is a Trusted Web Activity made with [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap): a Play Store app that opens the hosted site full screen in Chrome. It has no app code of its own, so web releases reach it without a new build.
+
+- `android/twa-manifest.json` is the source of truth. After editing it, run `npx @bubblewrap/cli update` in `android/` to regenerate the project.
+- Build with `npx @bubblewrap/cli build` in `android/`. It writes `app-release-signed.apk` (to sideload) and `app-release-bundle.aab` (for Play). Bump `appVersionCode` for each Play upload.
+- The upload key is `android/android.keystore`. It is git-ignored, so back it up. Its password is in the macOS Keychain: `security find-generic-password -s putio-audiobooks-keystore -w`.
+- `.well-known/assetlinks.json` proves the site and the app belong together. Without it the app shows a browser URL bar. With Play App Signing, add the app signing key's SHA-256 from the Play Console to `sha256_cert_fingerprints` there too.
+
 ## Files
 
 | File | What it holds |
@@ -121,6 +130,8 @@ Run the checks with `node --test`.
 | `styles.css` | Styles |
 | `config.js` | put.io Client ID |
 | `manifest.webmanifest`, `icons/` | Install metadata |
+| `privacy.html` | Privacy policy, also linked from the Play listing |
+| `android/`, `.well-known/assetlinks.json` | The Android app |
 | `robots.txt`, `sitemap.xml` | For search engines |
 | `test/` | Checks |
 

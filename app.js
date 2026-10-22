@@ -77,6 +77,8 @@ const ICONS = {
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   github: '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
   nyt: '<path d="M21.272,14.815h-0.098c-0.747,2.049-2.335,3.681-4.363,4.483v-4.483l2.444-2.182l-2.444-2.182V7.397 c2.138,0.006,3.885-1.703,3.927-3.84c0-2.629-2.509-3.556-3.927-3.556c-0.367-0.007-0.734,0.033-1.091,0.12v0.131h0.556 c0.801-0.141,1.565,0.394,1.706,1.195C17.99,1.491,17.996,1.537,18,1.583c-0.033,0.789-0.7,1.401-1.488,1.367 c-0.02-0.001-0.041-0.002-0.061-0.004c-2.444,0-5.323-1.985-8.454-1.985C5.547,0.83,3.448,2.692,3.284,5.139 C3.208,6.671,4.258,8.031,5.76,8.346v-0.12C5.301,7.931,5.041,7.407,5.084,6.862c0.074-1.015,0.957-1.779,1.973-1.705 C7.068,5.159,7.08,5.16,7.091,5.161c2.629,0,6.872,2.182,9.501,2.182h0.098v3.142l-2.444,2.182l2.444,2.182v4.549 c-0.978,0.322-2.003,0.481-3.033,0.469c-1.673,0.084-3.318-0.456-4.614-1.516l4.429-1.985V7.451l-6.196,2.727 c0.592-1.75,1.895-3.168,3.589-3.905V6.175c-4.516,1.004-8.138,4.243-8.138,8.705c0,5.193,4.025,9.12,9.818,9.12 c6.011,0,8.727-4.363,8.727-8.814V14.815z M8.858,18.186c-1.363-1.362-2.091-3.235-2.007-5.16c-0.016-0.88,0.109-1.756,0.371-2.596 l2.051-0.938v8.476L8.858,18.186z" fill="currentColor" stroke="none"/>',
+  download: '<path d="M12 4v10.5M7.5 10l4.5 4.5 4.5-4.5M5 19.5h14"/>',
+  saved: '<path d="M7.5 11l3 3 6-6.5M5 19.5h14"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
 };
 const icon = (name) =>
@@ -132,7 +134,7 @@ function sheet(title, build) {
 
 /* ---------- state ---------- */
 
-const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title', lockChapters: false }, store.get('settings', {}));
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title', group: false, lockChapters: false }, store.get('settings', {}));
 let library = store.get('library', []);
 let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
@@ -492,6 +494,11 @@ function bookCard(book, listRow) {
     h('div', { class: 'book-tools' },
       mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
       mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
+      // Starts a download in one tap; cancelling or removing one goes through the menu.
+      !offline.supported ? null
+        : downloads.has(book.id) ? mark('download', offlineLabel(book), () => openBookMenu(book), 'mark-save busy')
+        : offline.hasBook(book) ? mark('saved', 'Downloaded', () => openBookMenu(book), 'mark-save on')
+        : mark('download', 'Download', () => startDownload(book)),
       mark('more', 'More', () => openBookMenu(book))));
 }
 
@@ -561,9 +568,19 @@ function renderLibrary() {
       h('button', { class: 'link', type: 'button', onclick: openSort }, `Sort: ${SORTS[settings.sort]}`)),
     h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred'], ...(offline.supported ? [['saved', 'Downloaded']] : [])].map(([key, label]) =>
       h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
-    match.length ? h('div', { class: settings.list ? 'grid list' : 'grid' }, match.map((b) => bookCard(b, settings.list))) : h('p', { class: 'empty' }, 'Nothing matches that.'),
+    ...(!match.length ? [h('p', { class: 'empty' }, 'Nothing matches that.')] : settings.group ? authorGroups(match) : [bookGrid(match)]),
     ...(zipped ? [zippedHint()] : [])
   );
+}
+
+const bookGrid = (books) => h('div', { class: settings.list ? 'grid list' : 'grid' }, books.map((b) => bookCard(b, settings.list)));
+
+// Each author's books keep the chosen order; authors go A–Z with unknown last.
+function authorGroups(books) {
+  const groups = {};
+  for (const b of books) (groups[b.author || ''] ||= []).push(b);
+  return Object.entries(groups).sort(([a], [b]) => !a - !b || collator.compare(a, b))
+    .flatMap(([author, list]) => [h('h3', { class: 'group' }, author || 'Unknown author', h('small', {}, ` · ${list.length}`)), bookGrid(list)]);
 }
 
 function openBookMenu(book) {
@@ -586,8 +603,13 @@ function openBookMenu(book) {
 }
 
 function openSort() {
-  sheet('Sort by', (close) => h('div', { class: 'chips' }, Object.entries(SORTS).map(([key, label]) =>
-    h('button', { type: 'button', class: key === settings.sort ? 'chip on' : 'chip', onclick: () => { settings.sort = key; saveSettings(); close(); renderLibrary(); } }, label))));
+  sheet('Sort by', (close) => [
+    h('div', { class: 'chips wide' }, Object.entries(SORTS).map(([key, label]) =>
+      h('button', { type: 'button', class: key === settings.sort ? 'chip on' : 'chip', onclick: () => { settings.sort = key; saveSettings(); close(); renderLibrary(); } }, label))),
+    h('label', { class: 'setting' },
+      h('div', {}, h('strong', {}, 'Group by author')),
+      h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.group, onchange: (e) => { settings.group = e.target.checked; saveSettings(); renderLibrary(); } })),
+  ]);
 }
 
 function openSettings() {
@@ -623,6 +645,13 @@ let pausedAt = 0;
 let sleep = null;         // { mode: 'time', until } | { mode: 'chapter', index }
 let scrubbing = false;
 let shownChapter = -1;
+let warm = null;          // { id, el }: the next file loading quietly, so the hand-off doesn't wait on put.io
+function coolDown() {
+  if (!warm) return;
+  warm.el.removeAttribute('src');
+  warm.el.load();
+  warm = null;
+}
 
 const urlCache = new Map();
 const URL_TTL = 20 * 60 * 1000;
@@ -716,6 +745,7 @@ async function loadTrack(ti, time = 0, autoplay = false) {
   audio.defaultPlaybackRate = settings.speed;
   audio.src = time > 1 ? `${url}#t=${Math.floor(time)}` : url;
   audio.playbackRate = settings.speed;
+  coolDown();
   if (autoplay) audio.play().catch(() => { if (ticket === loadTicket) lockState('paused'); });
 }
 
@@ -747,6 +777,7 @@ function stopPlayback() {
   audio.pause();
   audio.removeAttribute('src');
   audio.load();
+  coolDown();
   cur = null;
   closePlayer();
   refreshPlayer();
@@ -1031,12 +1062,14 @@ function tick() {
 
   if (playing) savePosition(false);
 
-  // Line up the next file's URL early so the hand-off works with the screen locked.
+  // Line up the next file early so the hand-off works with the screen locked and starts without a stall.
   const d = trackDuration();
   const next = multi() && cur.book.tracks[cur.ti + 1];
-  if (next && d && d - t < 120 && !cachedUrl(next.id) && !next._asking) {
-    next._asking = true;
-    getUrl(next.id).catch(() => {}).finally(() => { next._asking = false; });
+  if (next && d && d - t < 120 && warm?.id !== next.id) {
+    const w = warm = { id: next.id, el: new Audio() };
+    w.el.muted = true;
+    w.el.preload = 'auto';
+    getUrl(next.id).then((url) => { if (warm === w) w.el.src = url; }).catch(() => { if (warm === w) warm = null; });
   }
 }
 

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Privacy: put.io Audiobooks</title>
-<meta name="description" content="What put.io Audiobooks stores, where, and what it sends to whom.">
+<title>Privacy Policy: put.io Audiobooks</title>
+<meta name="description" content="What put.io Audiobooks stores, where, what it sends to whom, and how to delete it.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'">
 <link rel="canonical" href="https://putio-audiobooks.vercel.app/privacy.html">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -13,28 +13,58 @@
 <body>
 <main class="connect">
   <div class="brand"><img src="icons/icon.svg" alt="" width="56" height="56"><span>put.io Audiobooks</span></div>
-  <h1>Privacy</h1>
+  <h1>Privacy Policy</h1>
   <section class="about">
-    <p>This applies to the web app at putio-audiobooks.vercel.app and the Android app, which opens the same web app.</p>
-    <h2>No server in between</h2>
-    <p>The app talks to put.io straight from your device. There is no server of ours that sees your files, your token or what you listen to.</p>
-    <h2>What is stored, and where</h2>
+    <p>Effective 22 October 2026.</p>
+    <p>This policy covers put.io Audiobooks: the web app at putio-audiobooks.vercel.app, and the Android app “Audiobooks for put.io” (package <code>app.vercel.putio_audiobooks</code>), which opens the same web app. It is made by Der Dooley (<a href="https://github.com/ddools">github.com/ddools</a>). It is an unofficial app, not affiliated with or endorsed by put.io.</p>
+
+    <h2>The short version</h2>
     <ul>
-      <li>Connecting gives the app a token for your whole put.io account, not just one folder. The app only lists files, reads audio and stores its own settings.</li>
-      <li>Your token stays on your device.</li>
-      <li>Listening positions, stars and hidden books are kept on your device and synced through your put.io account’s per-app storage.</li>
-      <li>Downloaded books are kept in the app’s storage on that device, until you remove them from a book’s menu or clear the app’s data.</li>
+      <li>There is no server of ours. The app talks to put.io straight from your device, and we never receive your files, your put.io token or what you listen to.</li>
+      <li>No ads, no cookies, no selling or sharing of data for advertising.</li>
+      <li>Two things leave your device for anyone other than put.io: book titles, for cover art lookups, and anonymous page-view counts.</li>
     </ul>
-    <h2>What is sent elsewhere</h2>
+
+    <h2>On your device</h2>
+    <p>The app keeps these in the browser storage for this site (in the Android app, that is Chrome’s storage for putio-audiobooks.vercel.app):</p>
     <ul>
-      <li>Cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.</li>
-      <li>Page views are counted with Vercel Web Analytics: no cookies, and nothing about your library or put.io account.</li>
+      <li>Your put.io access token, so you stay signed in.</li>
+      <li>Your library: book titles, authors, chapters and chosen cover links, built from your put.io folder.</li>
+      <li>Listening positions, stars, hidden books, and settings such as speed and skip lengths.</li>
+      <li>Books you download for offline listening.</li>
     </ul>
-    <p>Nothing is sold or shared for advertising.</p>
+    <p>None of this is sent to us.</p>
+
+    <h2>In your put.io account</h2>
+    <p>Connecting gives the app a token for your whole put.io account, not just one folder. The app uses it only to list files, stream and download audio, and read and write its own settings. It stores your listening positions, stars and hidden books in put.io’s per-app storage, so they sync between your devices. That data is held by put.io under <a href="https://put.io/privacy-policy">put.io’s privacy policy</a>.</p>
+
+    <h2>Sent to others</h2>
+    <ul>
+      <li><strong>Cover art (Apple and Open Library).</strong> After a scan, the title of each book without a cover is sent once to Apple’s iTunes Search and to Open Library’s search, and so is anything you type in the cover picker. Cover images are then loaded from their servers. No account details or file names beyond the title are sent. See <a href="https://www.apple.com/legal/privacy/">Apple’s privacy policy</a> and the <a href="https://archive.org/about/terms">Internet Archive’s terms</a>, which cover Open Library.</li>
+      <li><strong>Page views (Vercel).</strong> The hosted site counts page views with Vercel Web Analytics: the page address, referrer, browser, operating system, device type and country. It uses no cookies, and visitors are told apart only by a hash of the request, which is discarded after 24 hours. Nothing about your library or put.io account is included. See <a href="https://vercel.com/docs/analytics/privacy-policy">Vercel’s analytics privacy notes</a>.</li>
+    </ul>
+    <p>As with any website, each of these services, and put.io, sees your device’s IP address when the app connects to it.</p>
+
+    <h2>Security</h2>
+    <p>Every connection the app makes uses HTTPS. Your token is stored only on your device and sent only to put.io.</p>
+
+    <h2>Keeping and deleting your data</h2>
+    <ul>
+      <li><strong>On your device:</strong> data stays until you remove it. Remove a download from the book’s menu. To clear everything, clear the site data for putio-audiobooks.vercel.app in your browser. On Android, long-press the app icon, then Site settings, then Clear &amp; reset. Uninstalling the Android app may leave this data in Chrome, so clear it there first. Signing out removes the token only.</li>
+      <li><strong>In put.io:</strong> synced positions, stars and hidden books stay in your put.io account until removed through put.io. Revoking the app’s access in your put.io account settings stops it reaching your account.</li>
+      <li><strong>With Apple, Open Library and Vercel:</strong> we hold none of it, and we cannot link it to you. Their own policies, linked above, cover how long they keep it.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>The app is not directed at children under 13 and does not knowingly collect data from them.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, the new version is posted on this page with a new effective date. The history of every change is public in the <a href="https://github.com/ddools/putio-audiobooks/commits/main/privacy.html">source repository</a>.</p>
+
     <h2>Contact</h2>
-    <p>Questions or problems: <a href="https://github.com/ddools/putio-audiobooks/issues">open an issue on GitHub</a>.</p>
+    <p>For questions or requests about privacy, <a href="https://github.com/ddools/putio-audiobooks/issues">open an issue on GitHub</a>.</p>
   </section>
-  <p class="fine">An unofficial app, not affiliated with put.io. <a href="./">Back to the app</a></p>
+  <p class="fine"><a href="./">Back to the app</a></p>
 </main>
 </body>
 </html>

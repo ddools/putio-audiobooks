@@ -2,6 +2,7 @@
 // straight from the browser with no backend.
 import { DEMO } from './config.js';
 import * as demo from './demo.js';
+import { t } from './i18n.js';
 
 const API = 'https://api.put.io/v2';
 
@@ -26,9 +27,9 @@ async function call(path, { params = {}, method = 'GET', json, form } = {}) {
   }
   let res;
   try { res = await fetch(url, init); }
-  catch { throw new ApiError(0, 'Can’t reach put.io. Check your connection.'); }
+  catch { throw new ApiError(0, t('Can’t reach put.io. Check your connection.')); }
   if (!res.ok) {
-    let msg = `put.io returned ${res.status}`;
+    let msg = t('put.io returned {status}', { status: res.status });
     try { msg = (await res.json()).error_message || msg; } catch {}
     throw new ApiError(res.status, msg);
   }

@@ -6,3 +6,9 @@ try {
     document.documentElement.classList.add('signed-in');
   }
 } catch {}
+// Hides the landing copy from anyone getting another language, until app.js has translated it (see i18n.js).
+try {
+  const lang = localStorage.getItem('putio-audiobooks:lang')
+    || navigator.languages.map((l) => l.slice(0, 2).toLowerCase()).find((l) => /^(en|de|es|fr|it|nl|pt)$/.test(l));
+  if (lang && lang !== 'en') document.documentElement.classList.add('i18n-pending');
+} catch {}

@@ -2,6 +2,7 @@ import * as api from './api.js';
 import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID, DEMO, VERSION } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
+import { LANGS, lang, num, setLang, t, translate } from './i18n.js';
 import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
 import { byName, collator, scan, trackTitles } from './scan.js';
@@ -86,10 +87,14 @@ const icon = (name) =>
 const iconLink = (name, label, href) =>
   h('a', { class: 'icon-btn', href, target: '_blank', rel: 'noopener', 'aria-label': label, title: label, html: icon(name) });
 const siteFooter = () => h('footer', { class: 'fine foot' },
-  iconLink('github', 'Source on GitHub', 'https://github.com/ddools/putio-audiobooks'),
-  iconLink('nyt', 'NYT audio best sellers', 'https://www.nytimes.com/books/best-sellers/audio-fiction/'),
+  iconLink('github', t('Source on GitHub'), 'https://github.com/ddools/putio-audiobooks'),
+  iconLink('nyt', t('NYT audio best sellers'), 'https://www.nytimes.com/books/best-sellers/audio-fiction/'),
   h('a', { class: 'icon-btn', href: 'https://chill.institute', target: '_blank', rel: 'noopener', 'aria-label': 'chill.institute', title: 'chill.institute' },
-    h('img', { src: 'icons/chill.png', alt: '', width: 28, height: 28 })));
+    h('img', { src: 'icons/chill.png', alt: '', width: 28, height: 28 })),
+  langPicker());
+// Each language is named in itself, so people can find theirs whatever the page is showing.
+const langPicker = () => h('select', { 'aria-label': t('Language'), onchange: (e) => setLang(e.target.value) },
+  Object.entries(LANGS).map(([code, name]) => h('option', { value: code, lang: code, selected: code === lang }, name)));
 const iconBtn = (name, label, onclick, cls = '') =>
   h('button', { class: 'icon-btn ' + cls, type: 'button', 'aria-label': label, title: label, onclick, html: icon(name) });
 
@@ -104,10 +109,10 @@ function fmtLong(sec) {
   const m = Math.round(Math.max(0, sec || 0) / 60);
   const hrs = Math.floor(m / 60);
   const min = m % 60;
-  if (hrs) return min ? `${hrs}h ${min}m` : `${hrs}h`;
-  return min ? `${min}m` : 'under a minute';
+  if (hrs) return min ? t('{h}h {m}m', { h: hrs, m: min }) : t('{h}h', { h: hrs });
+  return min ? t('{m}m', { m: min }) : t('under a minute');
 }
-const fmtSize = (bytes) => (bytes > 999e6 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.ceil(bytes / 1e6)} MB`);
+const fmtSize = (bytes) => (bytes > 999e6 ? t('{n} GB', { n: num(+(bytes / 1e9).toFixed(1)) }) : t('{n} MB', { n: Math.ceil(bytes / 1e6) }));
 
 let toastTimer;
 function toast(msg) {
@@ -122,7 +127,7 @@ function sheet(title, build) {
   const dlg = h('dialog', { class: 'sheet' });
   const close = () => dlg.close();
   dlg.append(
-    h('div', { class: 'sheet-head' }, h('h3', {}, title), iconBtn('x', 'Close', close)),
+    h('div', { class: 'sheet-head' }, h('h3', {}, title), iconBtn('x', t('Close'), close)),
     h('div', { class: 'sheet-body' }, build(close))
   );
   dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
@@ -171,9 +176,9 @@ const redirectUri = location.origin + location.pathname;
 function failed(err) {
   if (err?.status === 401) {
     signOut();
-    toast('put.io signed you out. Connect again.');
+    toast(t('put.io signed you out. Connect again.'));
   } else {
-    toast(err?.message || 'Something went wrong.');
+    toast(err?.message || t('Something went wrong.'));
   }
 }
 
@@ -182,7 +187,7 @@ function failed(err) {
 let installEvent = null; // Chromium's deferred install prompt. iOS has none, so it gets instructions instead.
 const canInstall = () => !(matchMedia('(display-mode: standalone)').matches || navigator.standalone) && (installEvent || isIOS);
 async function install() {
-  if (!installEvent) return sheet('Add to Home Screen', () => h('p', {}, 'Tap the Share button in your browser, then “Add to Home Screen”.'));
+  if (!installEvent) return sheet(t('Add to Home Screen'), () => h('p', {}, t('Tap the Share button in your browser, then “Add to Home Screen”.')));
   installEvent.prompt();
   await installEvent.userChoice;
   installEvent = null; // the browser lets each prompt event be used once
@@ -192,13 +197,13 @@ function renderInstall() {
   const slot = $('#install');
   if (!slot) return;
   if (DEMO) return slot.replaceChildren(h('div', { class: 'setting install' },
-    h('div', {}, h('strong', {}, 'Have a put.io account?'), h('small', {}, 'Log in to listen to the audiobooks stored there')),
-    h('a', { class: 'btn primary', href: location.pathname }, 'Log in')));
+    h('div', {}, h('strong', {}, t('Have a put.io account?')), h('small', {}, t('Log in to listen to the audiobooks stored there'))),
+    h('a', { class: 'btn primary', href: location.pathname }, t('Log in'))));
   slot.replaceChildren(...(canInstall() && !store.get('installDismissed') ? [h('div', { class: 'setting install' },
-    h('div', {}, h('strong', {}, 'Install the app'), h('small', {}, 'Add it to your home screen')),
+    h('div', {}, h('strong', {}, t('Install the app')), h('small', {}, t('Add it to your home screen'))),
     h('span', { class: 'row' },
-      h('button', { class: 'btn primary', type: 'button', onclick: install }, 'Install'),
-      iconBtn('x', 'Dismiss', () => { store.set('installDismissed', true); renderInstall(); })))] : []));
+      h('button', { class: 'btn primary', type: 'button', onclick: install }, t('Install')),
+      iconBtn('x', t('Dismiss'), () => { store.set('installDismissed', true); renderInstall(); })))] : []));
 }
 addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; renderInstall(); });
 addEventListener('appinstalled', () => { installEvent = null; renderInstall(); });
@@ -208,12 +213,12 @@ addEventListener('appinstalled', () => { installEvent = null; renderInstall(); }
 function showConnect() {
   document.body.dataset.view = 'connect';
   const clientId = CLIENT_ID || settings.clientId;
-  const idInput = h('input', { type: 'text', inputmode: 'numeric', placeholder: 'Client ID', value: clientId || '', autocomplete: 'off', 'aria-label': 'put.io Client ID' });
-  const tokenInput = h('input', { type: 'password', placeholder: 'OAuth token', autocomplete: 'off', 'aria-label': 'put.io OAuth token' });
+  const idInput = h('input', { type: 'text', inputmode: 'numeric', placeholder: t('Client ID'), value: clientId || '', autocomplete: 'off', 'aria-label': t('put.io Client ID') });
+  const tokenInput = h('input', { type: 'password', placeholder: t('OAuth token'), autocomplete: 'off', 'aria-label': t('put.io OAuth token') });
 
   const connect = () => {
     const id = (CLIENT_ID || idInput.value).trim();
-    if (!id) { idInput.focus(); return toast('Enter your Client ID first.'); }
+    if (!id) { idInput.focus(); return toast(t('Enter your Client ID first.')); }
     settings.clientId = id;
     saveSettings();
     store.set('connecting', true);
@@ -229,28 +234,28 @@ function showConnect() {
       start();
     } catch (err) {
       api.setToken(null);
-      toast(err.status === 401 ? 'put.io rejected that token.' : err.message);
+      toast(err.status === 401 ? t('put.io rejected that token.') : err.message);
     }
   };
 
   // The copy lives in index.html; only the controls are built here.
   $('#cta', landing).replaceChildren(
     CLIENT_ID
-      ? h('button', { class: 'btn primary', type: 'button', onclick: connect }, 'Connect put.io')
+      ? h('button', { class: 'btn primary', type: 'button', onclick: connect }, t('Connect put.io'))
       : h('div', { class: 'setup' },
           h('ol', { class: 'steps' },
-            h('li', {}, 'Create an app at ',
-              h('a', { href: 'https://app.put.io/oauth/new', target: '_blank', rel: 'noopener' }, 'put.io → OAuth apps'),
-              '. Use this as the callback URL:',
-              h('button', { class: 'copy', type: 'button', onclick: () => navigator.clipboard?.writeText(redirectUri).then(() => toast('Callback URL copied.')) }, redirectUri)),
-            h('li', {}, 'Paste the Client ID it gives you.')),
+            h('li', {}, t('Create an app at '),
+              h('a', { href: 'https://app.put.io/oauth/new', target: '_blank', rel: 'noopener' }, t('put.io → OAuth apps')),
+              t('. Use this as the callback URL:'),
+              h('button', { class: 'copy', type: 'button', onclick: () => navigator.clipboard?.writeText(redirectUri).then(() => toast(t('Callback URL copied.'))) }, redirectUri)),
+            h('li', {}, t('Paste the Client ID it gives you.'))),
           h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); connect(); } },
-            idInput, h('button', { class: 'btn primary', type: 'submit' }, 'Connect')),
+            idInput, h('button', { class: 'btn primary', type: 'submit' }, t('Connect'))),
           h('details', {},
-            h('summary', {}, 'Use an OAuth token instead'),
+            h('summary', {}, t('Use an OAuth token instead')),
             h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); useToken(); } },
-              tokenInput, h('button', { class: 'btn', type: 'submit' }, 'Use token')))),
-    h('a', { class: 'btn outline', href: '?demo' }, 'No put.io account? Try the demo'));
+              tokenInput, h('button', { class: 'btn', type: 'submit' }, t('Use token'))))),
+    h('a', { class: 'btn outline', href: '?demo' }, t('No put.io account? Try the demo')));
   $('#landing-foot', landing).replaceChildren(siteFooter());
   app.replaceChildren(landing);
 }
@@ -265,10 +270,10 @@ function signOut() {
 
 /* ---------- folder picker ---------- */
 
-async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
+async function showFolders(trail = [{ id: 0, name: t('Your files') }]) {
   document.body.dataset.view = 'folders';
   const here = trail[trail.length - 1];
-  const listEl = h('div', { class: 'folder-list' }, h('p', { class: 'empty' }, 'Loading…'));
+  const listEl = h('div', { class: 'folder-list' }, h('p', { class: 'empty' }, t('Loading…')));
   const choose = () => {
     settings.root = { id: here.id, name: here.name };
     saveSettings();
@@ -280,13 +285,13 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
   app.replaceChildren(
     h('header', { class: 'bar' },
       trail.length > 1
-        ? iconBtn('left', 'Back', () => showFolders(trail.slice(0, -1)))
-        : settings.root ? iconBtn('x', 'Cancel', showLibrary) : h('span', { class: 'spacer' }),
-      h('div', { class: 'bar-title' }, h('small', {}, 'Where are your audiobooks?'), h('strong', {}, here.name)),
+        ? iconBtn('left', t('Back'), () => showFolders(trail.slice(0, -1)))
+        : settings.root ? iconBtn('x', t('Cancel'), showLibrary) : h('span', { class: 'spacer' }),
+      h('div', { class: 'bar-title' }, h('small', {}, t('Where are your audiobooks?')), h('strong', {}, here.name)),
       h('span', { class: 'spacer' })),
     listEl,
     siteFooter(),
-    h('footer', { class: 'pick' }, h('button', { class: 'btn primary', type: 'button', onclick: choose }, `Use “${here.name}”`))
+    h('footer', { class: 'pick' }, h('button', { class: 'btn primary', type: 'button', onclick: choose }, t('Use “{name}”', { name: here.name })))
   );
   try {
     const { files } = await api.listFiles(here.id);
@@ -296,7 +301,7 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
         ? dirs.map((d) =>
             h('button', { class: 'folder', type: 'button', onclick: () => showFolders([...trail, { id: d.id, name: d.name }]) },
               h('span', { class: 'folder-icon', html: icon('folder') }), h('span', { class: 'folder-name' }, d.name), h('span', { class: 'chev', html: icon('right') })))
-        : [h('p', { class: 'empty' }, 'No folders in here.')])
+        : [h('p', { class: 'empty' }, t('No folders in here.'))])
     );
   } catch (err) {
     listEl.replaceChildren(h('p', { class: 'empty' }, err.message));
@@ -309,7 +314,7 @@ async function showFolders(trail = [{ id: 0, name: 'Your files' }]) {
 let scanning = false;
 let zipped = 0; // archives the last scan passed over
 const zippedHint = () => (zipped
-  ? h('p', { class: 'fine zipped' }, `${zipped} zipped ${zipped === 1 ? 'file' : 'files'} skipped. Extract ${zipped === 1 ? 'it' : 'them'} on put.io, then rescan.`)
+  ? h('p', { class: 'fine zipped' }, zipped === 1 ? t('1 zipped file skipped. Extract it on put.io, then rescan.') : t('{n} zipped files skipped. Extract them on put.io, then rescan.', { n: zipped }))
   : null);
 async function rescan() {
   if (scanning || !settings.root) return;
@@ -384,12 +389,12 @@ function setArt(book, art) {
 }
 
 function openCoverPicker(book) {
-  const input = h('input', { type: 'search', value: coverTerm(book), 'aria-label': 'Search for a cover' });
+  const input = h('input', { type: 'search', value: coverTerm(book), 'aria-label': t('Search for a cover') });
   const results = h('div', { class: 'cover-picks' });
   let ticket = 0;
   const search = async () => {
     const mine = ++ticket;
-    results.replaceChildren(h('p', { class: 'fine' }, 'Searching…'));
+    results.replaceChildren(h('p', { class: 'fine' }, t('Searching…')));
     let found;
     try { found = await searchCovers(input.value.trim()); }
     catch { found = null; }
@@ -398,15 +403,15 @@ function openCoverPicker(book) {
       ? found.map((c) => h('button', { type: 'button', title: [c.title, c.by].filter(Boolean).join(' · '), onclick: () => { setArt(book, c.url); dlg.close(); } },
           h('img', { class: 'cover', src: c.thumb, alt: [c.title, c.by].filter(Boolean).join(', '), loading: 'lazy', referrerpolicy: 'no-referrer' }),
           h('small', {}, c.title)))
-      : [h('p', { class: 'fine' }, found ? 'Nothing found. Try fewer words, or just the title.' : 'Couldn’t reach the cover search. Try again in a minute.')]));
+      : [h('p', { class: 'fine' }, found ? t('Nothing found. Try fewer words, or just the title.') : t('Couldn’t reach the cover search. Try again in a minute.'))]));
   };
-  const dlg = sheet('Cover art', (close) => [
+  const dlg = sheet(t('Cover art'), (close) => [
     h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); search(); } },
-      input, h('button', { class: 'btn', type: 'submit' }, 'Search')),
+      input, h('button', { class: 'btn', type: 'submit' }, t('Search'))),
     results,
     h('div', { class: 'row' },
-      h('button', { class: 'btn', type: 'button', onclick: () => { setArt(book, null); close(); } }, 'No cover'),
-      h('button', { class: 'btn', type: 'button', onclick: () => { setArt(book, undefined); close(); } }, 'Use put.io’s image')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { setArt(book, null); close(); } }, t('No cover')),
+      h('button', { class: 'btn', type: 'button', onclick: () => { setArt(book, undefined); close(); } }, t('Use put.io’s image'))),
   ]);
   search();
 }
@@ -435,13 +440,13 @@ function coverEl(book) {
 function progressLabel(book, withLeft) {
   const p = positions[book.id];
   if (!p) return '';
-  if (p.done) return 'Finished';
+  if (p.done) return t('Finished');
   if (!(p.p > 0.005)) return '';
-  return `${Math.round(p.p * 100)}%` + (withLeft && p.left > 0 ? ` · ${fmtLong(p.left)} left` : '');
+  return `${Math.round(p.p * 100)}%` + (withLeft && p.left > 0 ? ` · ${t('{time} left', { time: fmtLong(p.left) })}` : '');
 }
 
 // Applied after starred-first; the sort is stable, so ties keep title order.
-const SORTS = { title: 'Title', author: 'Author', recent: 'Recently played', added: 'Recently added' };
+const SORTS = { title: t('Title'), author: t('Author'), recent: t('Recently played'), added: t('Recently added') };
 const sortCmp = {
   title: () => 0,
   author: (a, b) => !a.author - !b.author || collator.compare(a.author, b.author),
@@ -453,7 +458,7 @@ const sortCmp = {
 const downloads = new Map();
 function offlineLabel(book) {
   const job = downloads.get(book.id);
-  return job ? `Downloading ${Math.round(job.p * 100)}%` : offline.hasBook(book) ? 'Downloaded' : '';
+  return job ? t('Downloading {n}%', { n: Math.round(job.p * 100) }) : offline.hasBook(book) ? t('Downloaded') : '';
 }
 async function startDownload(book) {
   if (downloads.has(book.id)) return;
@@ -463,11 +468,11 @@ async function startDownload(book) {
   loadChapters(book); // read them while put.io is in reach
   try {
     await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; refreshCard(library.find((b) => b.id === book.id) || book); } }, job.ctl.signal);
-    toast(`“${book.title}” is ready to play offline.`);
+    toast(t('“{title}” is ready to play offline.', { title: book.title }));
   } catch (err) {
     // A cancelled download is thrown away; a failed one keeps its finished tracks so it can resume.
     if (job.ctl.signal.aborted) await offline.remove(book).catch(() => {});
-    else toast(err?.name === 'QuotaExceededError' ? 'Not enough space on this device.' : 'Download stopped. Start it again to pick up where it left off.');
+    else toast(err?.name === 'QuotaExceededError' ? t('Not enough space on this device.') : t('Download stopped. Start it again to pick up where it left off.'));
   }
   downloads.delete(book.id);
   renderLibrary();
@@ -492,14 +497,14 @@ function bookCard(book, listRow) {
       h('span', { class: 'book-title' }, book.title),
       h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow), offlineLabel(book)].filter(Boolean).join(' · '))),
     h('div', { class: 'book-tools' },
-      mark('star', starred ? 'Remove star' : 'Star', flip('starred'), 'mark-star' + (starred ? ' on' : '')),
-      mark(hidden ? 'eye' : 'eyeOff', hidden ? 'Show again' : 'Hide', flip('hidden')),
+      mark('star', starred ? t('Remove star') : t('Star'), flip('starred'), 'mark-star' + (starred ? ' on' : '')),
+      mark(hidden ? 'eye' : 'eyeOff', hidden ? t('Show again') : t('Hide'), flip('hidden')),
       // Starts a download in one tap; cancelling or removing one goes through the menu.
       !offline.supported ? null
         : downloads.has(book.id) ? mark('download', offlineLabel(book), () => openBookMenu(book), 'mark-save busy')
-        : offline.hasBook(book) ? mark('saved', 'Downloaded', () => openBookMenu(book), 'mark-save on')
-        : mark('download', 'Download', () => startDownload(book)),
-      mark('more', 'More', () => openBookMenu(book))));
+        : offline.hasBook(book) ? mark('saved', t('Downloaded'), () => openBookMenu(book), 'mark-save on')
+        : mark('download', t('Download'), () => startDownload(book)),
+      mark('more', t('More'), () => openBookMenu(book))));
 }
 
 // Swap one book's cards in place, so keyboard focus and the strip's scroll survive.
@@ -515,15 +520,15 @@ function refreshCard(book) {
 
 function showLibrary() {
   document.body.dataset.view = 'library';
-  const search = h('input', { type: 'search', placeholder: 'Search your books', value: query, 'aria-label': 'Search your books' });
+  const search = h('input', { type: 'search', placeholder: t('Search your books'), value: query, 'aria-label': t('Search your books') });
   search.addEventListener('input', () => { query = search.value; renderLibrary(); });
   app.replaceChildren(
     h('header', { class: 'bar' },
       h('div', { class: 'wordmark' }, h('img', { src: 'icons/icon.svg', alt: '', width: 28, height: 28 }), 'put.io Audiobooks'),
       h('span', { class: 'spacer grow' }),
-      iconBtn(settings.list ? 'grid' : 'list', settings.list ? 'Grid view' : 'List view',
+      iconBtn(settings.list ? 'grid' : 'list', settings.list ? t('Grid view') : t('List view'),
         () => { settings.list = !settings.list; saveSettings(); showLibrary(); }),
-      iconBtn('more', 'Settings', openSettings)),
+      iconBtn('more', t('Settings'), openSettings)),
     h('label', { class: 'search' }, h('span', { html: icon('search') }), search),
     h('div', { id: 'install' }),
     h('div', { id: 'shelf' }),
@@ -538,11 +543,11 @@ function renderLibrary() {
   if (!shelf) return;
   if (!library.length) {
     shelf.replaceChildren(scanning
-      ? h('p', { class: 'empty' }, `Looking through “${settings.root.name}”…`)
+      ? h('p', { class: 'empty' }, t('Looking through “{name}”…', { name: settings.root.name }))
       : h('div', { class: 'empty' },
-          h('p', {}, `No audiobooks found in “${settings.root?.name}”.`),
+          h('p', {}, t('No audiobooks found in “{name}”.', { name: settings.root?.name })),
           zippedHint(),
-          h('button', { class: 'btn', type: 'button', onclick: () => showFolders() }, 'Pick another folder')));
+          h('button', { class: 'btn', type: 'button', onclick: () => showFolders() }, t('Pick another folder'))));
     return;
   }
   const q = query.trim().toLowerCase();
@@ -560,15 +565,15 @@ function renderLibrary() {
     .slice(0, 6);
   // Native replaceChildren prints null as text, unlike h().
   shelf.replaceChildren(
-    ...(going.length ? [h('h2', { class: 'section' }, 'Keep listening'), h('div', { class: 'strip' }, going.map((b) => bookCard(b)))] : []),
-    h('h2', { class: 'section' }, q || filter !== 'all' ? `${match.length} found` : `All books`,
-      scanning ? h('small', {}, ' · updating…') : h('small', {}, ` · ${shown.length}`),
+    ...(going.length ? [h('h2', { class: 'section' }, t('Keep listening')), h('div', { class: 'strip' }, going.map((b) => bookCard(b)))] : []),
+    h('h2', { class: 'section' }, q || filter !== 'all' ? t('{n} found', { n: match.length }) : t('All books'),
+      scanning ? h('small', {}, ` · ${t('updating…')}`) : h('small', {}, ` · ${shown.length}`),
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
-        showHidden ? 'Hide hidden' : `Show all (${hiddenCount} hidden)`) : null,
-      h('button', { class: 'link', type: 'button', onclick: openSort }, `Sort: ${SORTS[settings.sort]}`)),
-    h('div', { class: 'filters' }, [['all', 'All'], ['going', 'In progress'], ['new', 'Not started'], ['done', 'Finished'], ['starred', 'Starred'], ...(offline.supported ? [['saved', 'Downloaded']] : [])].map(([key, label]) =>
+        showHidden ? t('Hide hidden') : t('Show all ({n} hidden)', { n: hiddenCount })) : null,
+      h('button', { class: 'link', type: 'button', onclick: openSort }, t('Sort: {by}', { by: SORTS[settings.sort] }))),
+    h('div', { class: 'filters' }, [['all', t('All')], ['going', t('In progress')], ['new', t('Not started')], ['done', t('Finished')], ['starred', t('Starred')], ...(offline.supported ? [['saved', t('Downloaded')]] : [])].map(([key, label]) =>
       h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
-    ...(!match.length ? [h('p', { class: 'empty' }, 'Nothing matches that.')] : settings.group ? authorGroups(match) : [bookGrid(match)]),
+    ...(!match.length ? [h('p', { class: 'empty' }, t('Nothing matches that.'))] : settings.group ? authorGroups(match) : [bookGrid(match)]),
     ...(zipped ? [zippedHint()] : [])
   );
 }
@@ -580,58 +585,61 @@ function authorGroups(books) {
   const groups = {};
   for (const b of books) (groups[b.author || ''] ||= []).push(b);
   return Object.entries(groups).sort(([a], [b]) => !a - !b || collator.compare(a, b))
-    .flatMap(([author, list]) => [h('h3', { class: 'group' }, author || 'Unknown author', h('small', {}, ` · ${list.length}`)), bookGrid(list)]);
+    .flatMap(([author, list]) => [h('h3', { class: 'group' }, author || t('Unknown author'), h('small', {}, ` · ${list.length}`)), bookGrid(list)]);
 }
 
 function openBookMenu(book) {
   const p = positions[book.id];
   sheet(book.title, (close) => [
     h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Progress'), h('small', {}, progressLabel(book, true) || 'Not started')),
+      h('div', {}, h('strong', {}, t('Progress')), h('small', {}, progressLabel(book, true) || t('Not started'))),
       h('span', { class: 'row' },
-        p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, 'Finished'),
-        p?.done || p?.p > 0.005 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, 'Start over') : null)),
+        p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, t('Finished')),
+        p?.done || p?.p > 0.005 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, t('Start over')) : null)),
     h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Cover art'), h('small', {}, 'Search for a different cover')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, 'Choose')),
+      h('div', {}, h('strong', {}, t('Cover art')), h('small', {}, t('Search for a different cover'))),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, t('Choose'))),
     offline.supported ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Offline'), h('small', {}, offlineLabel(book) || `Download to this device · ${fmtSize(book.tracks.reduce((n, t) => n + t.size, 0))}`)),
-      downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, 'Cancel')
-        : offline.hasBook(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => { removeDownload(book); close(); } }, 'Remove')
-        : h('button', { class: 'btn', type: 'button', onclick: () => { startDownload(book); close(); } }, 'Download')) : null,
+      h('div', {}, h('strong', {}, t('Offline')), h('small', {}, offlineLabel(book) || t('Download to this device · {size}', { size: fmtSize(book.tracks.reduce((n, tr) => n + tr.size, 0)) }))),
+      downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, t('Cancel'))
+        : offline.hasBook(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => { removeDownload(book); close(); } }, t('Remove'))
+        : h('button', { class: 'btn', type: 'button', onclick: () => { startDownload(book); close(); } }, t('Download'))) : null,
   ]);
 }
 
 function openSort() {
-  sheet('Sort by', (close) => [
+  sheet(t('Sort by'), (close) => [
     h('div', { class: 'chips wide' }, Object.entries(SORTS).map(([key, label]) =>
       h('button', { type: 'button', class: key === settings.sort ? 'chip on' : 'chip', onclick: () => { settings.sort = key; saveSettings(); close(); renderLibrary(); } }, label))),
     h('label', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Group by author')),
+      h('div', {}, h('strong', {}, t('Group by author'))),
       h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.group, onchange: (e) => { settings.group = e.target.checked; saveSettings(); renderLibrary(); } })),
   ]);
 }
 
 function openSettings() {
-  sheet('Settings', (close) => [
+  sheet(t('Settings'), (close) => [
     h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Library folder'), h('small', {}, settings.root?.name || 'Not set')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); showFolders(); } }, 'Change')),
+      h('div', {}, h('strong', {}, t('Library folder')), h('small', {}, settings.root?.name || t('Not set'))),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); showFolders(); } }, t('Change'))),
     h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Rescan'), h('small', {}, 'Pick up new books from put.io')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, 'Rescan')),
+      h('div', {}, h('strong', {}, t('Rescan')), h('small', {}, t('Pick up new books from put.io'))),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, t('Rescan'))),
     canInstall() ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Install the app'), h('small', {}, 'Add it to your home screen')),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); install(); } }, 'Install')) : null,
+      h('div', {}, h('strong', {}, t('Install the app')), h('small', {}, t('Add it to your home screen'))),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); install(); } }, t('Install'))) : null,
     isIOS ? h('label', { class: 'setting' },
-      h('div', {}, h('strong', {}, 'Chapter buttons on lock screen'), h('small', {}, 'Instead of skip back and forward')),
+      h('div', {}, h('strong', {}, t('Chapter buttons on lock screen')), h('small', {}, t('Instead of skip back and forward'))),
       h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.lockChapters, onchange: (e) => { settings.lockChapters = e.target.checked; saveSettings(); setupMediaSession(); } })) : null,
+    h('label', { class: 'setting' },
+      h('div', {}, h('strong', {}, t('Language'))),
+      langPicker()),
     h('div', { class: 'setting' },
       DEMO
-        ? h('div', {}, h('strong', {}, 'Demo'), h('small', {}, 'Sample books. Connect put.io to play your own.'))
-        : h('div', {}, h('strong', {}, 'put.io account'), h('small', {}, 'Your place in each book stays saved in put.io')),
-      h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, DEMO ? 'Exit demo' : 'Sign out')),
-    h('p', { class: 'fine zipped' }, `Version ${VERSION}`),
+        ? h('div', {}, h('strong', {}, t('Demo')), h('small', {}, t('Sample books. Connect put.io to play your own.')))
+        : h('div', {}, h('strong', {}, t('put.io account')), h('small', {}, t('Your place in each book stays saved in put.io'))),
+      h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, DEMO ? t('Exit demo') : t('Sign out'))),
+    h('p', { class: 'fine zipped' }, t('Version {v}', { v: VERSION })),
   ]);
 }
 
@@ -791,7 +799,7 @@ function togglePlay() {
     loadTrack(0, 0, true); // finished: start the book again
   } else if (audio.paused) {
     if (cur.loaded && pausedAt && Date.now() - pausedAt > 5 * 60 * 1000) audio.currentTime = Math.max(0, audio.currentTime - 10);
-    audio.play().catch(() => toast('Tap play again to start.'));
+    audio.play().catch(() => toast(t('Tap play again to start.')));
   } else {
     audio.pause();
   }
@@ -943,12 +951,12 @@ async function pullPositions() {
 
 const ui = {};
 const skipBtn = (dir, secs, onclick) =>
-  h('button', { class: 'skip', type: 'button', 'aria-label': `${dir === 'back' ? 'Back' : 'Forward'} ${secs} seconds`, onclick },
+  h('button', { class: 'skip', type: 'button', 'aria-label': dir === 'back' ? t('Back {n} seconds', { n: secs }) : t('Forward {n} seconds', { n: secs }), onclick },
     h('span', { html: icon(dir) }), h('b', {}, String(secs)));
 
 function buildPlayer() {
   const player = $('#player');
-  ui.range = h('input', { type: 'range', min: 0, max: 1000, value: 0, step: 1, 'aria-label': 'Position in chapter' });
+  ui.range = h('input', { type: 'range', min: 0, max: 1000, value: 0, step: 1, 'aria-label': t('Position in chapter') });
   ui.range.addEventListener('input', () => { scrubbing = true; tick(); });
   ui.range.addEventListener('change', () => {
     const [a, b] = bounds();
@@ -957,31 +965,31 @@ function buildPlayer() {
   });
   player.append(
     h('header', { class: 'p-top' },
-      iconBtn('down', 'Close player', closePlayer),
+      iconBtn('down', t('Close player'), closePlayer),
       ui.bookText = h('span', { class: 'p-left' }),
-      iconBtn('chapters', 'Chapters', openChapters)),
+      iconBtn('chapters', t('Chapters'), openChapters)),
     ui.cover = h('div', { class: 'p-cover' }),
     h('div', { class: 'p-meta' }, ui.title = h('h2'), ui.author = h('p')),
     ui.chapter = h('button', { class: 'p-chapter', type: 'button', onclick: openChapters }),
     h('div', { class: 'p-scrub' }, ui.range, h('div', { class: 'p-times' }, ui.elapsed = h('span'), ui.remain = h('span'))),
     h('div', { class: 'p-controls' },
-      iconBtn('prev', 'Previous chapter', prevChapter),
+      iconBtn('prev', t('Previous chapter'), prevChapter),
       skipBtn('back', settings.back, () => skip(-settings.back)),
-      ui.play = h('button', { class: 'play', type: 'button', 'aria-label': 'Play', onclick: togglePlay }),
+      ui.play = h('button', { class: 'play', type: 'button', 'aria-label': t('Play'), onclick: togglePlay }),
       skipBtn('fwd', settings.fwd, () => skip(settings.fwd)),
-      iconBtn('next', 'Next chapter', nextChapter)),
+      iconBtn('next', t('Next chapter'), nextChapter)),
     h('div', { class: 'p-tools' },
-      ui.speed = h('button', { class: 'tool', type: 'button', onclick: openSpeed }, ui.speedValue = h('b'), h('small', {}, 'Speed')),
+      ui.speed = h('button', { class: 'tool', type: 'button', onclick: openSpeed }, ui.speedValue = h('b'), h('small', {}, t('Speed'))),
       ui.sleep = h('button', { class: 'tool', type: 'button', onclick: openSleep }, h('b', { html: icon('moon') }), ui.sleepValue = h('small')))
   );
 
   const mini = $('#mini');
   mini.append(
     ui.miniBar = h('div', { class: 'bar-thin' }, h('i')),
-    h('button', { class: 'mini-open', type: 'button', 'aria-label': 'Open player', onclick: openPlayer },
+    h('button', { class: 'mini-open', type: 'button', 'aria-label': t('Open player'), onclick: openPlayer },
       ui.miniCover = h('span', { class: 'mini-cover' }),
       h('span', { class: 'mini-text' }, ui.miniTitle = h('strong'), ui.miniSub = h('small'))),
-    ui.miniPlay = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Play', onclick: togglePlay })
+    ui.miniPlay = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Play'), onclick: togglePlay })
   );
 }
 
@@ -1009,15 +1017,15 @@ function refreshPlayer() {
 // Things that change as the audio plays.
 function tick() {
   if (!cur) return;
-  const t = now();
-  if (cur.loaded) lastGood = t;
+  const time = now();
+  if (cur.loaded) lastGood = time;
   const list = chapterList();
   const idx = chapterIndex();
 
   if (idx !== shownChapter) {
     shownChapter = idx;
-    const label = list ? list[idx].title : 'No chapters';
-    ui.chapter.replaceChildren(h('span', {}, label), ...(list ? [h('small', {}, `${idx + 1} of ${list.length}`)] : []));
+    const label = list ? list[idx].title : t('No chapters');
+    ui.chapter.replaceChildren(h('span', {}, label), ...(list ? [h('small', {}, t('{n} of {total}', { n: idx + 1, total: list.length }))] : []));
     ui.chapter.disabled = !list;
     ui.miniSub.textContent = list ? label : cur.book.author || '';
     updateMediaSession();
@@ -1026,7 +1034,7 @@ function tick() {
 
   const [a, b] = bounds();
   const span = Math.max(0, b - a);
-  let rel = clamp(t - a, 0, span || Infinity);
+  let rel = clamp(time - a, 0, span || Infinity);
   if (scrubbing) rel = (ui.range.value / 1000) * span;
   else ui.range.value = span ? Math.round((rel / span) * 1000) : 0;
   ui.range.style.setProperty('--fill', `${ui.range.value / 10}%`);
@@ -1036,28 +1044,28 @@ function tick() {
   const frac = bookFraction();
   const left = bookSecondsLeft();
   ui.miniBar.firstChild.style.width = `${frac * 100}%`;
-  setText(ui.bookText, left == null ? '' : `${Math.round(frac * 100)}% · ${multi() ? 'About ' : ''}${fmtLong(left)} left`);
+  setText(ui.bookText, left == null ? '' : `${Math.round(frac * 100)}% · ${multi() ? t('About {time} left', { time: fmtLong(left) }) : t('{time} left', { time: fmtLong(left) })}`);
 
   const playing = !audio.paused && cur.started;
   if (ui.playing !== playing) {
     ui.playing = playing;
     for (const b of [ui.play, ui.miniPlay]) {
       b.innerHTML = icon(playing ? 'pause' : 'play');
-      b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+      b.setAttribute('aria-label', playing ? t('Pause') : t('Play'));
     }
   }
-  setText(ui.speedValue, `${settings.speed.toFixed(2).replace(/0$/, '')}×`);
+  setText(ui.speedValue, `${num(settings.speed, 1)}×`);
 
-  let sleepLabel = 'Off';
+  let sleepLabel = '';
   if (sleep?.mode === 'time') {
     const ms = sleep.until - Date.now();
     if (ms <= 0) { sleep = null; audio.pause(); }
-    else sleepLabel = ms > 90000 ? `${Math.round(ms / 60000)} min` : fmt(ms / 1000);
+    else sleepLabel = ms > 90000 ? t('{n} min', { n: Math.round(ms / 60000) }) : fmt(ms / 1000);
   } else if (sleep?.mode === 'chapter') {
-    sleepLabel = 'End of chapter';
-    if (!multi() && idx > sleep.index) { sleep = null; audio.pause(); sleepLabel = 'Off'; }
+    sleepLabel = t('End of chapter');
+    if (!multi() && idx > sleep.index) { sleep = null; audio.pause(); sleepLabel = ''; }
   }
-  setText(ui.sleepValue, sleepLabel === 'Off' ? 'Sleep timer' : sleepLabel);
+  setText(ui.sleepValue, sleepLabel || t('Sleep timer'));
   ui.sleep.classList.toggle('on', !!sleep);
 
   if (playing) savePosition(false);
@@ -1065,7 +1073,7 @@ function tick() {
   // Line up the next file early so the hand-off works with the screen locked and starts without a stall.
   const d = trackDuration();
   const next = multi() && cur.book.tracks[cur.ti + 1];
-  if (next && d && d - t < 120 && warm?.id !== next.id) {
+  if (next && d && d - time < 120 && warm?.id !== next.id) {
     const w = warm = { id: next.id, el: new Audio() };
     w.el.muted = true;
     w.el.preload = 'auto';
@@ -1096,7 +1104,7 @@ function openChapters() {
   const list = cur && chapterList();
   if (!list) return;
   const current = chapterIndex();
-  const dlg = sheet('Chapters', (close) =>
+  const dlg = sheet(t('Chapters'), (close) =>
     h('ol', { class: 'chapters' }, list.map((c, i) =>
       h('li', {}, h('button', { type: 'button', class: i === current ? 'current' : '', onclick: () => { gotoChapter(i); close(); } },
         h('span', { class: 'num' }, i === current ? h('span', { html: icon('play') }) : String(i + 1)),
@@ -1106,36 +1114,36 @@ function openChapters() {
 }
 
 function openSpeed() {
-  sheet('Speed', () => {
+  sheet(t('Speed'), () => {
     const value = h('output', {}, '');
     const presets = [0.8, 1, 1.1, 1.2, 1.3, 1.5, 1.75, 2, 2.5, 3];
     const chips = h('div', { class: 'chips' });
     const paint = () => {
-      value.textContent = `${settings.speed.toFixed(2)}×`;
+      value.textContent = `${num(settings.speed, 2)}×`;
       chips.replaceChildren(...presets.map((p) =>
-        h('button', { type: 'button', class: Math.abs(p - settings.speed) < 0.001 ? 'chip on' : 'chip', onclick: () => { setSpeed(p); paint(); } }, `${p}×`)));
+        h('button', { type: 'button', class: Math.abs(p - settings.speed) < 0.001 ? 'chip on' : 'chip', onclick: () => { setSpeed(p); paint(); } }, `${num(p)}×`)));
     };
     paint();
     return [
       h('div', { class: 'stepper' },
-        h('button', { class: 'btn', type: 'button', 'aria-label': 'Slower', onclick: () => { setSpeed(settings.speed - 0.05); paint(); } }, '−'),
+        h('button', { class: 'btn', type: 'button', 'aria-label': t('Slower'), onclick: () => { setSpeed(settings.speed - 0.05); paint(); } }, '−'),
         value,
-        h('button', { class: 'btn', type: 'button', 'aria-label': 'Faster', onclick: () => { setSpeed(settings.speed + 0.05); paint(); } }, '+')),
+        h('button', { class: 'btn', type: 'button', 'aria-label': t('Faster'), onclick: () => { setSpeed(settings.speed + 0.05); paint(); } }, '+')),
       chips,
     ];
   });
 }
 
 function openSleep() {
-  sheet('Sleep timer', (close) => {
+  sheet(t('Sleep timer'), (close) => {
     const pick = (next) => () => { setSleep(next); close(); };
     const options = [5, 10, 15, 30, 45, 60].map((m) =>
-      h('button', { class: 'chip', type: 'button', onclick: pick({ mode: 'time', until: Date.now() + m * 60000 }) }, `${m} min`));
+      h('button', { class: 'chip', type: 'button', onclick: pick({ mode: 'time', until: Date.now() + m * 60000 }) }, t('{n} min', { n: m })));
     return [
       h('div', { class: 'chips' }, options),
       h('div', { class: 'chips wide' },
-        h('button', { class: sleep?.mode === 'chapter' ? 'chip on' : 'chip', type: 'button', onclick: pick({ mode: 'chapter', index: chapterIndex() }) }, 'End of this chapter'),
-        sleep ? h('button', { class: 'chip', type: 'button', onclick: pick(null) }, 'Turn off') : null),
+        h('button', { class: sleep?.mode === 'chapter' ? 'chip on' : 'chip', type: 'button', onclick: pick({ mode: 'chapter', index: chapterIndex() }) }, t('End of this chapter')),
+        sleep ? h('button', { class: 'chip', type: 'button', onclick: pick(null) }, t('Turn off')) : null),
     ];
   });
 }
@@ -1282,7 +1290,7 @@ audio.addEventListener('error', () => {
     // Stream links expire and are tied to an IP address. Ask for a fresh one.
     loadTrack(cur.ti, lastGood, true);
   } else {
-    toast('Couldn’t play this file. Check your connection and try again.');
+    toast(t('Couldn’t play this file. Check your connection and try again.'));
     lockState('paused');
     cur.started = false;
     pendingSeek = lastGood;
@@ -1320,6 +1328,7 @@ function start() {
 }
 
 function boot() {
+  translate(landing);
   buildPlayer();
   setupMediaSession();
   offline.init().then(renderLibrary, () => {});
@@ -1335,7 +1344,7 @@ function boot() {
     store.del('connecting');
     history.replaceState(null, '', location.pathname + location.search);
     if (asked && fragment.get('access_token')) store.set('token', fragment.get('access_token'));
-    else if (asked) toast('put.io didn’t grant access.');
+    else if (asked) toast(t('put.io didn’t grant access.'));
   } else store.del('connecting'); // an abandoned sign-in must not leave the door open
 
   if (DEMO || store.get('token')) start();

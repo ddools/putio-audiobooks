@@ -118,7 +118,7 @@ Run the checks with `node --test`.
 | File | What it holds |
 | --- | --- |
 | `index.html` | Page shell, landing page and search metadata |
-| `boot.js` | Hides the landing page from signed-in visitors before first paint |
+| `boot.js` | Hides the landing page from signed-in visitors, and untranslated copy, before first paint |
 | `app.js` | UI and playback |
 | `api.js` | put.io client |
 | `scan.js` | Turns put.io folders into books |
@@ -126,6 +126,7 @@ Run the checks with `node --test`.
 | `covers.js` | Cover art search |
 | `demo.js`, `demo/` | The sample library behind `?demo` |
 | `offline.js` | Downloaded books |
+| `i18n.js`, `locales/` | Translations: German, Spanish, French, Italian, Dutch and Portuguese (Portugal). A new string needs an entry in each `locales/*.js`; `node test/i18n.test.mjs` lists any that are missing |
 | `sw.js` | Service worker |
 | `styles.css` | Styles |
 | `config.js` | put.io Client ID |

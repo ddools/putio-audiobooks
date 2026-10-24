@@ -1,9 +1,10 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v14';
+const CACHE = PREFIX + 'v15';
 const SHELL = [
-  './', 'index.html', 'styles.css', 'boot.js', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'demo.js', 'offline.js', 'scan.js',
+  './', 'index.html', 'styles.css', 'boot.js', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'demo.js', 'offline.js', 'scan.js', 'i18n.js',
+  'locales/de.js', 'locales/es.js', 'locales/fr.js', 'locales/it.js', 'locales/nl.js', 'locales/pt.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'icons/apple-touch-icon.png', 'icons/connect-art.svg', 'icons/chill.png',
 ];

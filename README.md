@@ -52,6 +52,15 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): th
 - Keyboard: space to play or pause, left and right arrows to skip.
 - Rewinds 10 seconds when you come back after a pause of more than 5 minutes.
 
+**Read along**
+
+- Put an EPUB next to an audiobook in put.io and a Read button appears in the player. Or pick one from anywhere in put.io in the book's menu.
+- The reader opens at the paragraph being read aloud and follows along. Tap any paragraph, then "Listen from here", to move the audio there.
+- Close the reader after reading ahead, and the player offers to carry on listening from where you stopped reading. Reading positions sync between devices.
+- Contents, text size, and serif or sans serif type.
+- The spot is first estimated from the chapters. "Find the exact spot" pins it to the sentence: it listens to about 24 seconds of the audio with a speech model that runs on the device (Whisper, a one-time download of about 60 MB), and finds those words in the text. Every match is remembered, so nearby spots line up better from then on. Works with MP3, M4B and M4A.
+- The EPUB must be DRM-free and the same edition as the recording.
+
 **Sync and offline**
 
 - Remembers your place in every book. Positions, stars and hidden books sync between devices through put.io's own per-app config storage.
@@ -70,6 +79,7 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): th
 | An audio file directly in the library folder | A book on its own. |
 | `Author/Book/` folders, or an `Author - Title` name | The author. |
 | An image in the folder | The cover. One named `cover`, `folder` or `front` is preferred. |
+| An `.epub` file | The ebook for the reader: a book folder's only EPUB, or the one whose name matches the book. |
 | Zip and RAR files | Skipped. The library tells you how many; extract them on put.io and rescan. |
 
 - **Formats:** MP3, M4B, M4A, AAC, OGG, Opus, FLAC, WAV.
@@ -83,7 +93,8 @@ Not in this version: embedded cover art from inside M4B files, and ID3 tags from
 
 - The app talks to put.io straight from your browser. There is no server in between.
 - Connecting gives the app a token for your whole put.io account, not just one folder. The app only lists files, reads audio and stores its own settings.
-- Your token, listening positions, stars and hidden books stay on your device and in your put.io account. Downloaded books stay in the browser's storage on the device.
+- Your token, listening and reading positions, stars and hidden books stay on your device and in your put.io account. Downloaded books and opened EPUBs stay in the browser's storage on the device.
+- "Find the exact spot" downloads a speech model from Hugging Face once, after asking. Speech recognition runs on the device: the audio never leaves it.
 - The one exception is cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.
 - The hosted copy counts page views with Vercel Web Analytics: no cookies, and nothing about your library or put.io account.
 
@@ -122,7 +133,11 @@ Run the checks with `node --test`.
 | `app.js` | UI and playback |
 | `api.js` | put.io client |
 | `scan.js` | Turns put.io folders into books |
-| `m4b.js` | Chapter and tag reader |
+| `m4b.js` | Chapter and tag reader, and AAC clips for speech recognition |
+| `epub.js`, `zip.js` | EPUB reader |
+| `sync.js` | Lines the text up with the audio: chapter matching, the position map, finding heard words in the text |
+| `clip.js` | Cuts a few seconds of MP3 or M4B audio with range requests |
+| `whisper.js`, `whisper-worker.js`, `vendor/` | On-device speech recognition (transformers.js and ONNX Runtime; see `vendor/README.md`) |
 | `covers.js` | Cover art search |
 | `demo.js`, `demo/` | The sample library behind `?demo` |
 | `offline.js` | Downloaded books |

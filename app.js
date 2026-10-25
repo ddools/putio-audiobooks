@@ -1,4 +1,6 @@
 import * as api from './api.js';
+import { audioClip, blobReader } from './clip.js';
+import { parseEpub } from './epub.js';
 import { httpReader, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID, DEMO, VERSION } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
@@ -6,6 +8,8 @@ import { LANGS, lang, num, setLang, t, translate } from './i18n.js';
 import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
 import { byName, collator, scan, trackTitles } from './scan.js';
+import { learn, locate, makeMap, matchChapters, timedWords, wordAt, wordIndex } from './sync.js';
+import * as whisper from './whisper.js';
 
 // The baked Client ID only accepts the hosted URL as its callback. On localhost,
 // drop it so the connect screen offers a pasted Client ID or OAuth token instead.
@@ -80,6 +84,9 @@ const ICONS = {
   nyt: '<path d="M21.272,14.815h-0.098c-0.747,2.049-2.335,3.681-4.363,4.483v-4.483l2.444-2.182l-2.444-2.182V7.397 c2.138,0.006,3.885-1.703,3.927-3.84c0-2.629-2.509-3.556-3.927-3.556c-0.367-0.007-0.734,0.033-1.091,0.12v0.131h0.556 c0.801-0.141,1.565,0.394,1.706,1.195C17.99,1.491,17.996,1.537,18,1.583c-0.033,0.789-0.7,1.401-1.488,1.367 c-0.02-0.001-0.041-0.002-0.061-0.004c-2.444,0-5.323-1.985-8.454-1.985C5.547,0.83,3.448,2.692,3.284,5.139 C3.208,6.671,4.258,8.031,5.76,8.346v-0.12C5.301,7.931,5.041,7.407,5.084,6.862c0.074-1.015,0.957-1.779,1.973-1.705 C7.068,5.159,7.08,5.16,7.091,5.161c2.629,0,6.872,2.182,9.501,2.182h0.098v3.142l-2.444,2.182l2.444,2.182v4.549 c-0.978,0.322-2.003,0.481-3.033,0.469c-1.673,0.084-3.318-0.456-4.614-1.516l4.429-1.985V7.451l-6.196,2.727 c0.592-1.75,1.895-3.168,3.589-3.905V6.175c-4.516,1.004-8.138,4.243-8.138,8.705c0,5.193,4.025,9.12,9.818,9.12 c6.011,0,8.727-4.363,8.727-8.814V14.815z M8.858,18.186c-1.363-1.362-2.091-3.235-2.007-5.16c-0.016-0.88,0.109-1.756,0.371-2.596 l2.051-0.938v8.476L8.858,18.186z" fill="currentColor" stroke="none"/>',
   download: '<path d="M12 4v10.5M7.5 10l4.5 4.5 4.5-4.5M5 19.5h14"/>',
   saved: '<path d="M7.5 11l3 3 6-6.5M5 19.5h14"/>',
+  book: '<path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5z"/><path d="M12 6.5v13"/>',
+  target: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  file: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
 };
 const icon = (name) =>
@@ -139,7 +146,7 @@ function sheet(title, build) {
 
 /* ---------- state ---------- */
 
-const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title', group: false, lockChapters: false }, store.get('settings', {}));
+const settings = Object.assign({ clientId: '', root: null, speed: 1, back: 15, fwd: 30, list: false, sort: 'title', group: false, lockChapters: false, readSize: 19, readSans: false }, store.get('settings', {}));
 let library = store.get('library', []);
 let positions = store.get('positions', {});
 const saveSettings = () => store.set('settings', settings);
@@ -166,6 +173,16 @@ function toggleMark(kind, id) {
   renderLibrary();
   if (at) $('#shelf')?.querySelectorAll(`${at.strip ? '.strip' : '.grid'} [data-book="${CSS.escape(at.id)}"] button`)[at.i]?.focus();
 }
+
+// Reading: where each book was last read ({ c: character offset, at }), EPUBs linked by hand
+// ({ id, name, size, at }, or { none: true, at } to drop the one the scan found), and exact spots
+// found by speech recognition, as [audio, text] anchors. The first two sync through put.io like positions do.
+const reading = store.get('reading', {});
+const epubLinks = store.get('epubLinks', {});
+const anchors = store.get('anchors', {});
+const pushReading = (id) => api.setConfig('read_' + id, reading[id]).catch(() => {});
+const pushLink = (id) => api.setConfig('epub_' + id, epubLinks[id]).catch(() => {});
+const epubOf = (book) => (epubLinks[book.id] ? (epubLinks[book.id].none ? null : epubLinks[book.id]) : book.epub || null);
 
 const audio = $('#audio');
 const app = $('#app');
@@ -339,7 +356,7 @@ async function rescan() {
     library = found;
     saveLibrary();
     // An empty scan is more likely a glitch than a cleared-out library; don't delete downloads over it.
-    if (found.length) offline.keepOnly(new Set(found.flatMap((b) => b.tracks.map((t) => String(t.id))))).catch(() => {});
+    if (found.length) offline.keepOnly(new Set(found.flatMap((b) => [...b.tracks.map((t) => String(t.id)), epubOf(b)?.id].filter(Boolean).map(String)))).catch(() => {});
     if (cur) {
       const same = library.find((b) => b.id === cur.book.id);
       if (same) cur.book = same;
@@ -466,6 +483,7 @@ async function startDownload(book) {
   downloads.set(book.id, job);
   renderLibrary();
   loadChapters(book); // read them while put.io is in reach
+  if (epubOf(book)) epubBlob(epubOf(book)).catch(() => {});
   try {
     await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; refreshCard(library.find((b) => b.id === book.id) || book); } }, job.ctl.signal);
     toast(t('“{title}” is ready to play offline.', { title: book.title }));
@@ -599,6 +617,11 @@ function openBookMenu(book) {
     h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, t('Cover art')), h('small', {}, t('Search for a different cover'))),
       h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, t('Choose'))),
+    h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, t('Ebook')), h('small', {}, epubOf(book)?.name || t('Add an EPUB to read along'))),
+      h('span', { class: 'row' },
+        epubOf(book) ? h('button', { class: 'btn', type: 'button', onclick: () => { close(); openBook(book, false); openPlayer(); openReader(); } }, t('Read')) : null,
+        h('button', { class: 'btn', type: 'button', onclick: () => { close(); openEpubPicker(book); } }, epubOf(book) ? t('Change') : t('Choose')))),
     offline.supported ? h('div', { class: 'setting' },
       h('div', {}, h('strong', {}, t('Offline')), h('small', {}, offlineLabel(book) || t('Download to this device · {size}', { size: fmtSize(book.tracks.reduce((n, tr) => n + tr.size, 0)) }))),
       downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, t('Cancel'))
@@ -634,6 +657,9 @@ function openSettings() {
     h('label', { class: 'setting' },
       h('div', {}, h('strong', {}, t('Language'))),
       langPicker()),
+    whisper.ready() ? h('div', { class: 'setting' },
+      h('div', {}, h('strong', {}, t('Speech model')), h('small', {}, t('Finds the exact spot in ebooks · {size}', { size: fmtSize(whisper.DOWNLOAD) }))),
+      h('button', { class: 'btn danger', type: 'button', onclick: () => { whisper.forget(); close(); toast(t('Speech model removed.')); } }, t('Remove'))) : null,
     h('div', { class: 'setting' },
       DEMO
         ? h('div', {}, h('strong', {}, t('Demo')), h('small', {}, t('Sample books. Connect put.io to play your own.')))
@@ -654,6 +680,7 @@ let sleep = null;         // { mode: 'time', until } | { mode: 'chapter', index 
 let scrubbing = false;
 let shownChapter = -1;
 let warm = null;          // { id, el }: the next file loading quietly, so the hand-off doesn't wait on put.io
+let pendingFrac = null;   // like pendingSeek, as a fraction of the track, for a file whose length isn't known yet
 function coolDown() {
   if (!warm) return;
   warm.el.removeAttribute('src');
@@ -725,6 +752,36 @@ function bookSecondsLeft() {
   return left / (settings.speed || 1);
 }
 
+// A fraction of the whole book as a track and a fraction of that track, the way bookFraction counts.
+function trackAt(book, frac) {
+  if (book.tracks.length === 1) return { ti: 0, within: clamp(frac, 0, 1) };
+  const total = book.tracks.reduce((n, t) => n + t.size, 0) || 1;
+  let before = 0;
+  for (let ti = 0; ti < book.tracks.length; ti++) {
+    const size = book.tracks[ti].size;
+    if (frac * total < before + size || ti === book.tracks.length - 1) return { ti, within: clamp((frac * total - before) / (size || 1), 0, 1) };
+    before += size;
+  }
+}
+function fracOf(book, ti, within) {
+  if (book.tracks.length === 1) return within;
+  const total = book.tracks.reduce((n, t) => n + t.size, 0) || 1;
+  return (book.tracks.slice(0, ti).reduce((n, t) => n + t.size, 0) + within * book.tracks[ti].size) / total;
+}
+function seekFraction(frac, autoplay) {
+  if (!cur) return;
+  const { ti, within } = trackAt(cur.book, frac);
+  const play = autoplay ?? (cur.started && !audio.paused);
+  if (ti === cur.ti && trackDuration()) {
+    if (!cur.started) { pendingSeek = within * trackDuration(); if (play) togglePlay(); else tick(); return; }
+    seekTo(within * trackDuration());
+    if (play && audio.paused) togglePlay();
+    return;
+  }
+  loadTrack(ti, 0, play);
+  pendingFrac = within;
+}
+
 function startPos(book) {
   const p = positions[book.id];
   if (!p || p.done) return { t: 0, s: 0 };
@@ -739,6 +796,7 @@ async function loadTrack(ti, time = 0, autoplay = false) {
   cur.started = true;
   cur.loaded = false;
   pendingSeek = time;
+  pendingFrac = null;
   lastGood = time;
   shownChapter = -1;
   if (autoplay) lockState('playing');
@@ -786,6 +844,7 @@ function stopPlayback() {
   audio.removeAttribute('src');
   audio.load();
   coolDown();
+  hideReader();
   cur = null;
   closePlayer();
   refreshPlayer();
@@ -870,6 +929,7 @@ async function loadChapters(book) {
     saveLibrary();
     renderLibrary();
     if (cur?.book.id === book.id) { shownChapter = -1; refreshPlayer(); }
+    if (rd.open && ebook && cur?.book.id === book.id) rd.map = textMap(cur.book); // the chapters line the text up better
   } catch (err) {
     console.warn('Could not read chapters for', book.title, err);
   }
@@ -910,6 +970,7 @@ async function pullPositions() {
   try { remote = await api.getConfig(); } catch { return; }
   let changed = false;
   let marked = false;
+  let read = false;
   for (const [key, value] of Object.entries(remote)) {
     if (!value || typeof value.at !== 'number') continue;
     if (key.startsWith('mark_')) {
@@ -919,6 +980,13 @@ async function pullPositions() {
       marks.hidden[value.h ? 'add' : 'delete'](id);
       markAt[id] = value.at;
       marked = true;
+      continue;
+    }
+    if (key.startsWith('read_') || key.startsWith('epub_')) {
+      const [list, id] = key.startsWith('read_') ? [reading, key.slice(5)] : [epubLinks, key.slice(5)];
+      if (list[id]?.at >= value.at) continue;
+      list[id] = value;
+      read = true;
       continue;
     }
     if (!key.startsWith('pos_')) continue;
@@ -942,8 +1010,11 @@ async function pullPositions() {
   // Whatever put.io lacks or holds an older copy of goes up now: sends that failed offline are not retried elsewhere.
   for (const [id, p] of Object.entries(positions)) if (!(remote['pos_' + id]?.at >= p.at)) pushPosition(id);
   for (const id of Object.keys(markAt)) if (!(remote['mark_' + id]?.at >= markAt[id])) pushMark(id);
+  for (const [id, r] of Object.entries(reading)) if (!(remote['read_' + id]?.at >= r.at)) pushReading(id);
+  for (const [id, l] of Object.entries(epubLinks)) if (!(remote['epub_' + id]?.at >= l.at)) pushLink(id);
   if (marked) saveMarks();
   if (changed) savePositions();
+  if (read) { store.set('reading', reading); store.set('epubLinks', epubLinks); refreshPlayer(); }
   if (changed || marked) renderLibrary();
 }
 
@@ -969,7 +1040,8 @@ function buildPlayer() {
       ui.bookText = h('span', { class: 'p-left' }),
       iconBtn('chapters', t('Chapters'), openChapters)),
     ui.cover = h('div', { class: 'p-cover' }),
-    h('div', { class: 'p-meta' }, ui.title = h('h2'), ui.author = h('p')),
+    h('div', { class: 'p-meta' }, ui.title = h('h2'), ui.author = h('p'),
+      ui.readHint = h('button', { class: 'read-hint', type: 'button', hidden: true, onclick: () => listenFromText(reading[cur.book.id].c) }, t('Listen from where you read'))),
     ui.chapter = h('button', { class: 'p-chapter', type: 'button', onclick: openChapters }),
     h('div', { class: 'p-scrub' }, ui.range, h('div', { class: 'p-times' }, ui.elapsed = h('span'), ui.remain = h('span'))),
     h('div', { class: 'p-controls' },
@@ -980,7 +1052,8 @@ function buildPlayer() {
       iconBtn('next', t('Next chapter'), nextChapter)),
     h('div', { class: 'p-tools' },
       ui.speed = h('button', { class: 'tool', type: 'button', onclick: openSpeed }, ui.speedValue = h('b'), h('small', {}, t('Speed'))),
-      ui.sleep = h('button', { class: 'tool', type: 'button', onclick: openSleep }, h('b', { html: icon('moon') }), ui.sleepValue = h('small')))
+      ui.sleep = h('button', { class: 'tool', type: 'button', onclick: openSleep }, h('b', { html: icon('moon') }), ui.sleepValue = h('small')),
+      ui.read = h('button', { class: 'tool', type: 'button', hidden: true, onclick: openReader }, h('b', { html: icon('book') }), h('small', {}, t('Read'))))
   );
 
   const mini = $('#mini');
@@ -1011,6 +1084,7 @@ function refreshPlayer() {
   ui.title.textContent = book.title;
   ui.author.textContent = book.author || '';
   ui.miniTitle.textContent = book.title;
+  ui.read.hidden = !epubOf(book);
   tick();
 }
 
@@ -1055,6 +1129,8 @@ function tick() {
     }
   }
   setText(ui.speedValue, `${num(settings.speed, 1)}×`);
+  // Read further than listened, on this device or another: offer to carry on from there.
+  ui.readHint.hidden = !epubOf(cur.book) || !(reading[cur.book.id]?.at > (positions[cur.book.id]?.at || 0));
 
   let sleepLabel = '';
   if (sleep?.mode === 'time') {
@@ -1069,6 +1145,7 @@ function tick() {
   ui.sleep.classList.toggle('on', !!sleep);
 
   if (playing) savePosition(false);
+  readerTick();
 
   // Line up the next file early so the hand-off works with the screen locked and starts without a stall.
   const d = trackDuration();
@@ -1098,7 +1175,10 @@ function closePlayer() {
   if (history.state?.player) history.back();
   else hidePlayer();
 }
-addEventListener('popstate', hidePlayer);
+addEventListener('popstate', (e) => {
+  if (!e.state?.reader) hideReader();
+  if (!e.state?.player && !e.state?.reader) hidePlayer();
+});
 
 function openChapters() {
   const list = cur && chapterList();
@@ -1145,6 +1225,407 @@ function openSleep() {
         h('button', { class: sleep?.mode === 'chapter' ? 'chip on' : 'chip', type: 'button', onclick: pick({ mode: 'chapter', index: chapterIndex() }) }, t('End of this chapter')),
         sleep ? h('button', { class: 'chip', type: 'button', onclick: pick(null) }, t('Turn off')) : null),
     ];
+  });
+}
+
+/* ---------- reader ---------- */
+
+// The open EPUB: { id (put.io file id), data (from parseEpub), index (its words, built on the first snap) }.
+let ebook = null;
+// The reader's state. following: the text keeps up with the audio. picked: a tapped paragraph. flat: [{ pos, el }] in order.
+const rd = { open: false, following: false, picked: null, now: null, busy: '', flat: [], map: null, lastTick: 0, saveTimer: 0 };
+
+// The EPUB's bytes, kept on the device after the first fetch so it opens again without put.io.
+async function epubBlob(file) {
+  const kept = offline.has(file.id) && await offline.blob(file.id);
+  if (kept) return kept;
+  const res = await fetch(await getUrl(file.id));
+  if (!res.ok) throw new Error(t('put.io returned {status}', { status: res.status }));
+  const blob = await res.blob();
+  await offline.save(file.id, blob, 'application/epub+zip').catch(() => {});
+  return blob;
+}
+async function loadEbook(book) {
+  const file = epubOf(book);
+  if (!file) return null;
+  if (ebook?.id === file.id) return ebook;
+  const data = await parseEpub(new Uint8Array(await (await epubBlob(file)).arrayBuffer()));
+  ebook = { id: file.id, data, index: null };
+  return ebook;
+}
+
+// The book's chapters as fractions of the whole, for lining up with the EPUB's table of contents.
+function audioChapters(book) {
+  if (book.tracks.length > 1) {
+    const titles = trackTitles(book.tracks.map((tr) => tr.name));
+    return book.tracks.map((tr, ti) => ({ title: titles[ti], a: fracOf(book, ti, 0) }));
+  }
+  const d = book.duration || (cur?.book === book ? trackDuration() : 0);
+  return d && book.chapters?.length > 1 ? book.chapters.map((c) => ({ title: c.title, a: c.start / d })) : [];
+}
+function textMap(book) {
+  const { text, toc } = ebook.data;
+  const { anchors: chapters, body } = matchChapters(audioChapters(book), toc, text.length);
+  return makeMap({ learned: anchors[book.id] || [], chapters, body, length: text.length });
+}
+
+// Listens to about 24 seconds of audio at `frac` and finds those words in the text, then keeps the
+// match as anchors, so this spot and the ones near it line up from now on. before: the clip ends at
+// frac (what was just heard) instead of being centred on it. Resolves to whether it found them.
+const CLIP = 24;
+async function snap(book, frac, before, onProgress) {
+  const { ti, within } = trackAt(book, frac);
+  const track = book.tracks[ti];
+  const local = offline.has(track.id) && await offline.blob(track.id);
+  const reader = local ? blobReader(local) : httpReader(await getUrl(track.id), track.size);
+  const clip = await audioClip(reader, track.name, (d) => within * d - (before ? CLIP : CLIP / 2), CLIP);
+  const pcm = await whisper.pcm16k(clip.data, CLIP);
+  const heard = timedWords(await whisper.transcribe(pcm, ebook.data.lang, onProgress), clip.start, pcm.length / 16000);
+  ebook.index ||= wordIndex(ebook.data.text);
+  const hit = locate(ebook.index, heard, wordAt(ebook.index, textMap(book).toText(frac)));
+  if (!hit) return false;
+  const total = book.tracks.reduce((n, tr) => n + tr.size, 0) || 1;
+  const bookSecs = clip.duration / (book.tracks.length > 1 ? track.size / total : 1);
+  const at = (q, w) => [fracOf(book, ti, clamp(heard[q].t / clip.duration, 0, 1)), ebook.index.starts[w]];
+  let list = learn(anchors[book.id] || [], at(hit.qStart, hit.start), 3 / bookSecs);
+  if (hit.end - hit.start > 3) list = learn(list, at(hit.qEnd, hit.end), 3 / bookSecs);
+  anchors[book.id] = list;
+  store.set('anchors', anchors);
+  return true;
+}
+
+// The first time, ask before the speech model downloads.
+function askForModel() {
+  if (whisper.ready()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let yes = false;
+    const dlg = sheet(t('Find the exact spot'), (close) => [
+      h('p', {}, t('This listens to a few seconds of the book on this device and finds them in the text. It needs a one-time download of a speech model ({size}). The audio never leaves this device.', { size: fmtSize(whisper.DOWNLOAD) })),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => { yes = true; close(); } }, t('Download')),
+        h('button', { class: 'btn', type: 'button', onclick: close }, t('Not now'))),
+    ]);
+    dlg.addEventListener('close', () => resolve(yes));
+  });
+}
+
+// Runs a snap with its progress in the reader's bar. Resolves to whether it found the spot.
+async function findExact(frac, before, asked) {
+  if (!cur || !ebook || rd.busy || !whisper.supported) return false;
+  if (!whisper.ready() && !(asked && await askForModel())) return false;
+  const book = cur.book;
+  const progress = (p) => setBusy(p < 1 ? t('Downloading speech model {n}%', { n: Math.round(p * 100) }) : t('Finding the exact spot…'));
+  setBusy(t('Finding the exact spot…'));
+  if (!rd.open) toast(t('Finding the exact spot…'));
+  let found = false;
+  try {
+    await whisper.prepare(progress);
+    setBusy(t('Finding the exact spot…'));
+    found = await snap(book, frac, before, progress);
+    if (!found && asked) toast(t('Couldn’t find these words in the book. Is it the same edition?'));
+  } catch (err) {
+    console.warn('Exact spot failed', err);
+    if (asked) toast(/Unsupported|Not an MP3/.test(err?.message) ? t('The exact spot isn’t available for this audio format.') : t('Couldn’t find the exact spot. Try again in a moment.'));
+  }
+  setBusy('');
+  if (found && cur?.book === book) rd.map = textMap(book);
+  return found;
+}
+function setBusy(text) {
+  rd.busy = text;
+  renderBar();
+}
+
+function blockEl(b) {
+  const el = h(b.tag === 'li' ? 'p' : b.tag === 'q' ? 'blockquote' : b.tag, { 'data-pos': b.pos, class: b.tag === 'li' ? 'li' : null });
+  for (const [text, style] of b.runs) {
+    text.split('\n').forEach((part, i) => {
+      if (i) el.append(h('br'));
+      if (!part) return;
+      const node = document.createTextNode(part);
+      el.append(style === 'i' ? h('em', {}, node) : style === 'b' ? h('strong', {}, node) : style === 'bi' ? h('strong', {}, h('em', {}, node)) : node);
+    });
+  }
+  rd.flat.push({ pos: b.pos, el });
+  return el;
+}
+const blockIndex = (pos) => {
+  let lo = 0, hi = rd.flat.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (rd.flat[mid].pos <= pos) lo = mid; else hi = mid - 1; }
+  return lo;
+};
+// The first paragraph showing at the top of the reader.
+function topPos() {
+  const top = rd.scroll.getBoundingClientRect().top + 8;
+  let lo = 0, hi = rd.flat.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (rd.flat[mid].el.getBoundingClientRect().bottom < top) lo = mid + 1; else hi = mid; }
+  return rd.flat[lo]?.pos ?? 0;
+}
+// The audio's paragraph goes in the middle of the screen; a place to read from (top) at the top.
+function showPos(pos, smooth, top) {
+  const el = rd.flat[blockIndex(pos)]?.el;
+  if (!el) return;
+  const block = top ? 'start' : 'center';
+  el.scrollIntoView({ block, behavior: smooth ? 'smooth' : 'auto' });
+  // Sections off screen are laid out at a guessed height; once they're real, the first jump can be off.
+  if (!smooth) requestAnimationFrame(() => el.scrollIntoView({ block }));
+}
+function markNow(pos) {
+  const el = pos == null ? null : rd.flat[blockIndex(pos)]?.el;
+  if (el === rd.now) return false;
+  rd.now?.classList.remove('now');
+  rd.now = el;
+  el?.classList.add('now');
+  return true;
+}
+const sectionAt = (pos) => ebook?.data.sections.findLast((sec) => sec.pos <= pos);
+
+function buildReader() {
+  const el = $('#reader');
+  rd.text = h('article', { class: 'r-text' });
+  rd.scroll = h('div', { class: 'r-scroll' }, rd.text);
+  rd.title = h('strong');
+  rd.sub = h('small');
+  rd.bar = h('footer', { class: 'r-bar' });
+  rd.play = h('button', { class: 'play', type: 'button', 'aria-label': t('Play'), onclick: readerPlay });
+  el.append(
+    h('header', { class: 'r-top' },
+      iconBtn('down', t('Close reader'), closeReader),
+      h('div', { class: 'r-title' }, rd.title, rd.sub),
+      iconBtn('chapters', t('Contents'), openToc),
+      h('button', { class: 'icon-btn r-aa', type: 'button', 'aria-label': t('Text size'), title: t('Text size'), onclick: openTextSize }, 'Aa')),
+    rd.scroll,
+    rd.bar);
+  // Any scroll of the reader's own counts as reading; the ones that follow the audio come from code.
+  const mine = () => { rd.userAt = Date.now(); if (rd.following) { rd.following = false; renderBar(); } };
+  for (const ev of ['wheel', 'touchmove', 'keydown']) rd.scroll.addEventListener(ev, mine, { passive: true });
+  rd.scroll.addEventListener('scroll', () => {
+    if (Date.now() - (rd.userAt || 0) > 1500) return;
+    clearTimeout(rd.saveTimer);
+    rd.saveTimer = setTimeout(() => { saveReading(false); renderBar(); }, 500);
+  }, { passive: true });
+  rd.text.addEventListener('click', (e) => {
+    if (getSelection()?.toString()) return;
+    const p = e.target.closest('[data-pos]');
+    rd.picked?.classList.remove('picked');
+    rd.picked = p && p !== rd.picked ? p : null;
+    rd.picked?.classList.add('picked');
+    renderBar();
+  });
+  el.inert = true;
+}
+function applyTextSize() {
+  rd.text.style.setProperty('--size', `${settings.readSize}px`);
+  rd.text.classList.toggle('sans', settings.readSans);
+}
+
+function renderBar() {
+  if (!rd.open) return;
+  const pos = rd.picked ? +rd.picked.dataset.pos : rd.following && rd.map ? rd.map.toText(bookFraction()) : rd.flat.length ? topPos() : 0;
+  const sec = sectionAt(pos);
+  setText(rd.title, cur?.book.title || '');
+  setText(rd.sub, sec?.title || '');
+  const len = ebook?.data.text.length || 1;
+  let status, action;
+  if (rd.busy) status = [rd.busy, ''];
+  else if (rd.picked) {
+    status = [t('Start the audio here?'), ''];
+    action = h('button', { class: 'btn primary', type: 'button', onclick: () => listenFromText(+rd.picked.dataset.pos) }, t('Listen from here'));
+  } else if (rd.following) {
+    status = [t('Following the audio'), whisper.ready() ? '' : t('Spot estimated from chapters')];
+    action = whisper.supported ? iconBtn('target', t('Find the exact spot'), () => audioToText(true)) : null;
+  } else {
+    status = [t('Reading · {n}%', { n: Math.round((pos / len) * 100) }), t('Tap a paragraph to listen from there')];
+    action = h('button', { class: 'btn', type: 'button', onclick: () => audioToText(false) }, t('Back to the audio'));
+  }
+  rd.bar.replaceChildren(rd.play, h('div', { class: 'r-status' }, h('strong', {}, status[0]), status[1] ? h('small', {}, status[1]) : ''), ...(action ? [action] : []));
+}
+
+// Shows the audio's spot in the text: an estimate at once, then the exact spot if the model is here (or, asked, after the download).
+async function audioToText(asked) {
+  if (!cur || !ebook) return;
+  rd.following = true;
+  rd.picked?.classList.remove('picked');
+  rd.picked = null;
+  rd.map = textMap(cur.book);
+  const go = () => { const c = rd.map.toText(bookFraction()); markNow(c); showPos(c, false); renderBar(); };
+  go();
+  const before = Date.now();
+  if ((asked || whisper.ready()) && await findExact(bookFraction(), true, asked) && rd.open && (rd.following || (rd.userAt || 0) < before)) {
+    rd.following = true;
+    go();
+  }
+}
+
+// Moves the audio to the text at character c: through the map, then the exact spot when the model is here.
+async function listenFromText(c) {
+  if (!cur) return;
+  const book = cur.book;
+  try { await loadEbook(book); } catch (err) { return failed(err); }
+  rd.picked?.classList.remove('picked');
+  rd.picked = null;
+  let frac = textMap(book).toAudio(c);
+  if (whisper.ready() && await findExact(frac, false, false)) frac = textMap(book).toAudio(c);
+  if (cur?.book !== book) return;
+  seekFraction(frac, true);
+  reading[book.id] = { c, at: (positions[book.id]?.at || 0) - 1 }; // listening is now the newer of the two
+  store.set('reading', reading);
+  ui.readHint.hidden = true;
+  if (rd.open) { rd.following = true; rd.map = textMap(book); markNow(c); showPos(c, true); renderBar(); }
+}
+
+function readerPlay() {
+  if (!cur) return;
+  const wasPaused = audio.paused || !cur.started;
+  togglePlay();
+  if (wasPaused && !rd.following) audioToText(false);
+}
+
+function readerTick() {
+  if (!rd.open || !cur) return;
+  const playing = !audio.paused && cur.started;
+  if (rd.playing !== playing) {
+    rd.playing = playing;
+    rd.play.innerHTML = icon(playing ? 'pause' : 'play');
+    rd.play.setAttribute('aria-label', playing ? t('Pause') : t('Play'));
+  }
+  if (!rd.map || !rd.following || Date.now() - rd.lastTick < 500) return;
+  rd.lastTick = Date.now();
+  const c = rd.map.toText(bookFraction());
+  if (markNow(c)) { showPos(c, true); renderBar(); }
+}
+
+function saveReading(push) {
+  if (!cur || !ebook || !rd.flat.length || rd.following) return;
+  const id = cur.book.id;
+  reading[id] = { c: topPos(), at: Date.now() };
+  store.set('reading', reading);
+  const now = Date.now();
+  if (push || now - (rd.pushedAt || 0) > 30000) { rd.pushedAt = now; pushReading(id); }
+}
+
+async function openReader() {
+  if (!cur || !epubOf(cur.book) || rd.open) return;
+  const book = cur.book;
+  const el = $('#reader');
+  rd.open = true;
+  rd.following = false;
+  rd.picked = null;
+  rd.now = null;
+  rd.map = null;
+  rd.flat = [];
+  applyTextSize();
+  rd.text.replaceChildren(h('p', { class: 'r-note' }, t('Opening the book…')));
+  el.hidden = false;
+  el.inert = false;
+  requestAnimationFrame(() => document.body.classList.add('reader-open'));
+  history.pushState({ reader: true }, '');
+  renderBar();
+  readerTick();
+  try { await loadEbook(book); }
+  catch (err) {
+    console.warn('Could not open the EPUB', err);
+    rd.text.replaceChildren(h('p', { class: 'r-note' }, t('Couldn’t open this EPUB. It may be protected by DRM, or not an EPUB at all.')));
+    return;
+  }
+  if (!rd.open || cur?.book !== book) return;
+  rd.text.replaceChildren(...ebook.data.sections.map((sec) => h('section', {}, sec.blocks.map(blockEl))));
+  rd.map = textMap(book);
+  // Whichever happened last, listening or reading, is where the book opens.
+  const r = reading[book.id];
+  if (r && r.at > (positions[book.id]?.at || 0)) {
+    showPos(r.c, false, true);
+    renderBar();
+  } else audioToText(false);
+}
+function hideReader() {
+  if (!rd.open) return;
+  saveReading(true);
+  rd.open = false;
+  document.body.classList.remove('reader-open');
+  $('#reader').inert = true;
+  refreshPlayer();
+}
+function closeReader() {
+  if (history.state?.reader) history.back();
+  else hideReader();
+}
+
+function openToc() {
+  if (!ebook) return;
+  const entries = ebook.data.toc.length ? ebook.data.toc : ebook.data.sections.filter((sec) => sec.title).map((sec) => ({ title: sec.title, pos: sec.pos, depth: 0 }));
+  const here = topPos();
+  const current = entries.findLastIndex((e) => e.pos <= here);
+  const dlg = sheet(t('Contents'), (close) =>
+    h('ol', { class: 'toc' }, entries.map((e, i) =>
+      h('li', {}, h('button', { type: 'button', class: i === current ? 'current' : '', style: e.depth ? `padding-left:${10 + e.depth * 18}px` : null,
+        onclick: () => { close(); rd.following = false; rd.userAt = Date.now(); showPos(e.pos, false, true); requestAnimationFrame(() => { saveReading(false); renderBar(); }); } }, e.title)))));
+  $('.current', dlg)?.scrollIntoView({ block: 'center' });
+}
+
+function openTextSize() {
+  sheet(t('Text size'), () => {
+    const value = h('output', {}, '');
+    const fonts = h('div', { class: 'chips wide' });
+    const paint = () => {
+      value.textContent = String(settings.readSize);
+      fonts.replaceChildren(...[[false, t('Serif')], [true, t('Sans serif')]].map(([sans, label]) =>
+        h('button', { type: 'button', class: settings.readSans === sans ? 'chip on' : 'chip', onclick: () => set(settings.readSize, sans) }, label)));
+    };
+    const set = (size, sans) => {
+      const keep = rd.flat.length ? topPos() : null;
+      settings.readSize = clamp(size, 14, 30);
+      settings.readSans = sans;
+      saveSettings();
+      applyTextSize();
+      if (keep != null) showPos(keep, false, true);
+      paint();
+    };
+    paint();
+    return [
+      h('div', { class: 'stepper' },
+        h('button', { class: 'btn', type: 'button', 'aria-label': t('Smaller'), onclick: () => set(settings.readSize - 1, settings.readSans) }, '−'),
+        value,
+        h('button', { class: 'btn', type: 'button', 'aria-label': t('Larger'), onclick: () => set(settings.readSize + 1, settings.readSans) }, '+')),
+      fonts,
+    ];
+  });
+}
+
+// Picks the EPUB for a book from put.io, starting in the book's own folder.
+function openEpubPicker(book) {
+  sheet(t('Choose an EPUB'), (close) => {
+    const where = h('p', { class: 'fine' });
+    const list = h('div', { class: 'picker-list' });
+    const pick = (f) => {
+      epubLinks[book.id] = f ? { id: f.id, name: f.name, size: f.size || 0, at: Date.now() } : { none: true, at: Date.now() };
+      store.set('epubLinks', epubLinks);
+      pushLink(book.id);
+      close();
+      renderLibrary();
+      if (cur?.book.id === book.id) refreshPlayer();
+      if (f) toast(t('“{name}” will open from the player.', { name: f.name }));
+    };
+    const row = (name, label, onclick) => h('button', { type: 'button', onclick }, h('span', { html: icon(name) }), h('span', {}, label));
+    const show = async (folder) => {
+      where.textContent = folder.name || t('Your files');
+      list.replaceChildren(h('p', { class: 'fine' }, t('Loading…')));
+      try {
+        const { files, parent } = await api.listFiles(folder.id);
+        const dirs = files.filter((f) => f.file_type === 'FOLDER').sort(byName);
+        const epubs = files.filter((f) => f.file_type !== 'FOLDER' && /\.epub$/i.test(f.name)).sort(byName);
+        list.replaceChildren(...[
+          folder.id ? row('left', t('Up a folder'), () => show({ id: parent?.parent_id ?? 0, name: '' })) : null,
+          ...dirs.map((d) => row('folder', d.name, () => show(d))),
+          ...epubs.map((f) => row('file', f.name, () => pick(f))),
+          dirs.length || epubs.length ? null : h('p', { class: 'empty' }, t('No folders or EPUBs in here.')),
+        ].filter(Boolean));
+      } catch (err) {
+        list.replaceChildren(h('p', { class: 'fine' }, err.message));
+      }
+    };
+    show(book.id.startsWith('d') ? { id: Number(book.id.slice(1)), name: book.title } : settings.root);
+    return [where, list, epubOf(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => pick(null) }, t('Don’t use an EPUB')) : null];
   });
 }
 
@@ -1247,8 +1728,10 @@ function setupMediaSession() {
 audio.addEventListener('loadedmetadata', () => {
   if (!cur) return;
   const d = Number.isFinite(audio.duration) ? audio.duration : 0;
-  if (pendingSeek > 0) audio.currentTime = d ? Math.min(pendingSeek, Math.max(0, d - 1)) : pendingSeek;
+  if (pendingFrac != null && d) audio.currentTime = pendingFrac * d;
+  else if (pendingSeek > 0) audio.currentTime = d ? Math.min(pendingSeek, Math.max(0, d - 1)) : pendingSeek;
   pendingSeek = 0;
+  pendingFrac = null;
   cur.loaded = true;
   audio.playbackRate = settings.speed;
   if (!multi() && d && !cur.book.duration) { cur.book.duration = d; saveLibrary(); }
@@ -1307,6 +1790,7 @@ setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
 
 addEventListener('keydown', (e) => {
   if (!cur || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, dialog, button, a')) return;
+  if (rd.open && /^(Space|ArrowUp|ArrowDown|PageUp|PageDown)$/.test(e.code)) return; // those scroll the text
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
   else if (e.code === 'ArrowLeft') e.shiftKey ? prevChapter() : skip(-settings.back);
   else if (e.code === 'ArrowRight') e.shiftKey ? nextChapter() : skip(settings.fwd);
@@ -1330,6 +1814,7 @@ function start() {
 function boot() {
   translate(landing);
   buildPlayer();
+  buildReader();
   setupMediaSession();
   offline.init().then(renderLibrary, () => {});
   $('#player').inert = true;

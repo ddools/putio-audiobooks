@@ -251,3 +251,143 @@ export async function parseM4b(r) {
   try { meta = await tags(r, udta); } catch {}
   return { duration, chapters, tags: meta };
 }
+
+/* ---------- a stretch of audio, for speech recognition ---------- */
+
+// Reads an MPEG-4 descriptor's length: up to four bytes of seven bits each.
+function descLen(b, o) {
+  let n = 0;
+  for (let i = 0; i < 4; i++) { const c = b[o + i]; n = (n << 7) | (c & 0x7f); if (!(c & 0x80)) return [n, o + i + 1]; }
+  return [n, o + 4];
+}
+// The AAC decoder config from esds, reduced to what an ADTS header can say.
+function audioConfig(b) {
+  let o = 4; // version and flags
+  const find = (tag) => {
+    while (o < b.length) {
+      const t = b[o];
+      const [len, next] = descLen(b, o + 1);
+      if (t === tag) return [len, next];
+      if (t === 0x03) { o = next + 3; if (b[next + 2] & 0x80) o += 2; if (b[next + 2] & 0x40) o += 1 + b[o]; if (b[next + 2] & 0x20) o += 2; continue; }
+      if (t === 0x04) { o = next + 13; continue; }
+      o = next + len;
+    }
+    return null;
+  };
+  const dsi = find(0x05);
+  if (!dsi) return null;
+  const asc = b.subarray(dsi[1], dsi[1] + dsi[0]);
+  let bit = 0;
+  const bits = (n) => { let v = 0; for (let i = 0; i < n; i++, bit++) v = (v << 1) | ((asc[bit >> 3] >> (7 - (bit & 7))) & 1); return v; };
+  let aot = bits(5);
+  if (aot === 31) aot = 32 + bits(6);
+  let freq = bits(4);
+  if (freq === 15) { bits(24); freq = -1; }
+  const channels = bits(4);
+  // HE-AAC: the core is plain AAC at half the rate; decoders bring the rest back by themselves.
+  if (aot === 5 || aot === 29) {
+    const ext = bits(4);
+    if (ext === 15) bits(24);
+    aot = bits(5);
+  }
+  return aot >= 1 && aot <= 4 && freq >= 0 && channels > 0 ? { profile: aot - 1, freq, channels } : null;
+}
+
+// `seconds` of audio from when(duration) seconds in, as ADTS AAC that decodeAudioData can read. Only the
+// sample tables' few needed entries and the audio itself are read, never the whole file.
+// Resolves to { data, start, duration }: start is where the clip really begins.
+export async function aacClip(r, when, seconds) {
+  const moov = (await kids(r, 0, r.size)).find((a) => a.type === 'moov');
+  if (!moov) throw new Error('No moov');
+  for (const trak of (await kids(r, moov.body, moov.end)).filter((a) => a.type === 'trak')) {
+    const mdia = (await kids(r, trak.body, trak.end)).find((a) => a.type === 'mdia');
+    if (!mdia) continue;
+    const parts = await kids(r, mdia.body, mdia.end);
+    const hdlr = parts.find((a) => a.type === 'hdlr');
+    if (!hdlr || ascii(await r.read(hdlr.body + 8, 4), 0, 4) !== 'soun') continue;
+    const mb = await r.read(parts.find((a) => a.type === 'mdhd').body, 32);
+    const timescale = view(mb).getUint32(mb[0] === 1 ? 20 : 12) || 1;
+    const duration = (mb[0] === 1 ? u64(view(mb), 24) : view(mb).getUint32(16)) / timescale;
+    const minf = parts.find((a) => a.type === 'minf');
+    const stbl = minf && (await kids(r, minf.body, minf.end)).find((a) => a.type === 'stbl');
+    if (!stbl) continue;
+    const t = Object.fromEntries((await kids(r, stbl.body, stbl.end)).map((a) => [a.type, a]));
+    if (!t.stsd || !t.stts || !t.stsc || !t.stsz || !(t.stco || t.co64)) continue;
+
+    const entry = await atomAt(r, t.stsd.body + 8, t.stsd.end);
+    if (!entry || entry.type !== 'mp4a') throw new Error(`Unsupported audio: ${entry?.type}`);
+    const version = view(await r.read(entry.body + 8, 2)).getUint16(0);
+    const esds = (await kids(r, entry.body + 28 + (version === 1 ? 16 : version === 2 ? 36 : 0), entry.end)).find((a) => a.type === 'esds');
+    const cfg = esds && audioConfig(await body(r, esds, 4096));
+    if (!cfg) throw new Error('Unsupported AAC config');
+
+    // stts: which sample is playing at `start`, and when it began.
+    const stts = view(await body(r, t.stts, 1 << 20));
+    const want = Math.max(0, Math.min(when(duration), duration - seconds)) * timescale;
+    let first = 0, clock = 0, delta = 1024;
+    for (let i = 0, e = stts.getUint32(4); i < e; i++) {
+      const count = stts.getUint32(8 + i * 8);
+      delta = stts.getUint32(12 + i * 8) || 1;
+      if (clock + count * delta > want) { const k = Math.floor((want - clock) / delta); first += k; clock += k * delta; break; }
+      first += count; clock += count * delta;
+    }
+    const begins = clock / timescale;
+    const frames = Math.ceil((seconds * timescale) / delta);
+
+    // stsc: the chunk that holds `first`, and the first sample in that chunk.
+    const stsc = view(await body(r, t.stsc, 4 << 20));
+    const runs = [];
+    for (let i = 0, e = stsc.getUint32(4); i < e; i++) runs.push([stsc.getUint32(8 + i * 12), stsc.getUint32(12 + i * 12)]);
+    const coBox = t.stco || t.co64;
+    const chunkCount = view(await r.read(coBox.body + 4, 4)).getUint32(0);
+    const chunkOffset = async (c) => {
+      const b = await r.read(coBox.body + 8 + c * (t.co64 ? 8 : 4), t.co64 ? 8 : 4);
+      return t.co64 ? u64(view(b), 0) : view(b).getUint32(0);
+    };
+    let chunk = 0, sample = 0, run = 0;
+    for (;;) {
+      const per = runs[run]?.[1] || 1;
+      const nextFirst = run + 1 < runs.length ? runs[run + 1][0] - 1 : chunkCount;
+      const span = (nextFirst - chunk) * per;
+      if (sample + span > first || run + 1 >= runs.length) {
+        const skip = Math.floor((first - sample) / per);
+        chunk += skip; sample += skip * per;
+        break;
+      }
+      sample += span; chunk = nextFirst; run++;
+    }
+    const sz = view(await r.read(t.stsz.body, 12));
+    const fixed = sz.getUint32(4), total = sz.getUint32(8);
+    const last = Math.min(total, first + frames);
+    const sizes = fixed ? null : view(await r.read(t.stsz.body + 12 + sample * 4, (last - sample) * 4));
+    const sizeOf = (i) => fixed || sizes.getUint32((i - sample) * 4);
+
+    const out = [];
+    let i = sample;
+    while (i < last && chunk < chunkCount) {
+      while (run + 1 < runs.length && runs[run + 1][0] - 1 <= chunk) run++;
+      const per = runs[run][1];
+      let off = await chunkOffset(chunk);
+      for (let k = 0; k < per && i < last; k++, i++) {
+        const size = sizeOf(i);
+        if (i >= first) out.push([off, size]);
+        off += size;
+      }
+      chunk++;
+    }
+    if (!out.length) throw new Error('No audio there');
+    const from = out[0][0], to = out.at(-1)[0] + out.at(-1)[1];
+    const raw = to - from < 8 << 20 ? await r.read(from, to - from) : null; // usually one stretch of the file
+    const data = new Uint8Array(out.reduce((n, [, s]) => n + s + 7, 0));
+    let o = 0;
+    for (const [off, size] of out) {
+      const len = size + 7;
+      data.set([0xff, 0xf1, (cfg.profile << 6) | (cfg.freq << 2) | (cfg.channels >> 2), ((cfg.channels & 3) << 6) | (len >> 11),
+        (len >> 3) & 0xff, ((len & 7) << 5) | 0x1f, 0xfc], o);
+      data.set(raw && off >= from && off + size <= to ? raw.subarray(off - from, off - from + size) : await r.read(off, size), o + 7);
+      o += len;
+    }
+    return { data, start: begins, duration };
+  }
+  throw new Error('No audio track');
+}

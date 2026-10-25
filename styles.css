@@ -11,6 +11,7 @@
   --on-accent: #1a1a1a;
   --danger: #f0705a;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
   --top: env(safe-area-inset-top, 0px);
   --bottom: env(safe-area-inset-bottom, 0px);
   --mini: 0px;
@@ -300,7 +301,7 @@ select {
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.28s;
 }
 body.player-open #player { transform: none; visibility: visible; transition-delay: 0s; }
-body.player-open { overflow: hidden; }
+body.player-open, body.reader-open { overflow: hidden; }
 
 .p-top { display: flex; align-items: center; justify-content: space-between; margin: 0 -10px; }
 .p-left { color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
@@ -314,6 +315,7 @@ body.player-open { overflow: hidden; }
 .p-meta { text-align: center; display: grid; gap: 4px; }
 .p-meta h2 { font: 600 clamp(22px, 5.6vw, 28px)/1.15 var(--sans); letter-spacing: -0.01em; text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .p-meta p { color: var(--muted); min-height: 1.45em; }
+.p-meta .read-hint { justify-self: center; margin-top: 4px; padding: 4px 12px; border-radius: 999px; color: var(--accent-ink); font-size: 13.5px; font-weight: 600; border: 1px solid var(--accent-ink); }
 
 .p-chapter {
   justify-self: center; max-width: 100%;
@@ -353,7 +355,7 @@ input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .skip b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 700; padding-top: 3px; }
 .skip:active { background: var(--raised); }
 
-.p-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.p-tools { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 12px; }
 .tool {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   min-height: 48px; border-radius: 14px;
@@ -364,6 +366,66 @@ input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .tool small { color: var(--muted); font-size: 13.5px; white-space: nowrap; }
 .tool.on { border-color: var(--accent-ink); }
 .tool.on b, .tool.on small { color: var(--accent-ink); }
+
+/* ---------- reader ---------- */
+
+#reader {
+  position: fixed; inset: 0; z-index: 11;
+  background: var(--bg);
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.28s;
+}
+body.reader-open #reader { transform: none; visibility: visible; transition-delay: 0s; }
+.r-top { display: flex; align-items: center; gap: 4px; padding: calc(var(--top) + 6px) max(6px, calc(50vw - 380px)) 6px; border-bottom: 1px solid var(--line); }
+.r-title { flex: 1; min-width: 0; display: grid; text-align: center; }
+.r-title strong, .r-title small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r-title strong { font-size: 14.5px; }
+.r-title small { color: var(--muted); font-size: 12.5px; }
+.r-aa { font: 600 17px/1 var(--serif); }
+.r-scroll { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.r-text {
+  --size: 19px;
+  max-width: 36em; margin: 0 auto; padding: 24px 22px 40vh;
+  font: var(--size)/1.6 var(--read-font, var(--serif));
+  overflow-wrap: break-word; hyphens: auto;
+}
+.r-text.sans { --read-font: var(--sans); }
+.r-text section { content-visibility: auto; contain-intrinsic-size: auto 1600px; padding-bottom: 2.5em; }
+.r-text section + section { border-top: 1px solid var(--line); padding-top: 2em; }
+.r-text p, .r-text pre, .r-text blockquote { margin: 0 0 0.85em; }
+.r-text h1, .r-text h2, .r-text h3, .r-text h4, .r-text h5, .r-text h6 { font-family: var(--sans); line-height: 1.25; margin: 0.6em 0 0.8em; text-wrap: balance; }
+.r-text h1, .r-text h2 { font-size: 1.35em; }
+.r-text h3, .r-text h4, .r-text h5, .r-text h6 { font-size: 1.1em; }
+.r-text .li { padding-left: 1.2em; text-indent: -0.8em; }
+.r-text .li::before { content: "•  "; color: var(--muted); }
+.r-text blockquote { padding-left: 1em; border-left: 3px solid var(--line); }
+.r-text pre { white-space: pre-wrap; font-size: 0.85em; }
+.r-text [data-pos] { border-radius: 6px; margin-left: -6px; margin-right: -6px; padding-left: 6px; padding-right: 6px; scroll-margin-top: 12px; transition: background 0.3s; }
+.r-text .now { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.r-text .picked { outline: 2px solid var(--accent-ink); outline-offset: 1px; }
+.r-text .r-note { font-family: var(--sans); color: var(--muted); text-align: center; padding-top: 30vh; }
+.r-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px max(14px, calc(50vw - 370px)) calc(var(--bottom) + 10px);
+  border-top: 1px solid var(--line); background: var(--surface);
+}
+.r-bar .play { width: 48px; height: 48px; flex: none; }
+.r-bar .play svg { width: 22px; height: 22px; }
+.r-status { flex: 1; min-width: 0; display: grid; font-size: 13.5px; }
+.r-status strong, .r-status small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r-status small { color: var(--muted); }
+.r-bar .btn { min-height: 40px; padding: 0 14px; font-size: 14.5px; }
+.toc { list-style: none; margin: 0 -10px; padding: 0; }
+.toc button { display: block; width: 100%; min-height: 46px; padding: 10px; border-radius: 12px; text-align: left; }
+.toc .current { background: var(--raised); font-weight: 600; }
+.picker-list { display: grid; margin: 0 -10px; }
+.picker-list button { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 10px; border-radius: 12px; text-align: left; }
+.picker-list button span:last-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.picker-list svg { width: 20px; height: 20px; color: var(--muted); }
+.meter { height: 6px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.2s; }
 
 /* ---------- sheets ---------- */
 

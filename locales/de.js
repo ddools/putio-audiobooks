@@ -196,4 +196,5 @@ export default {
   'Up a folder': 'Einen Ordner höher',
   'No folders or EPUBs in here.': 'Hier sind keine Ordner oder EPUBs.',
   'Don’t use an EPUB': 'Kein EPUB verwenden',
+  'Read along': 'Mitlesen',
 };

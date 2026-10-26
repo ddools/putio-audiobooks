@@ -196,4 +196,5 @@ export default {
   'Up a folder': 'Subir uma pasta',
   'No folders or EPUBs in here.': 'Não há pastas nem EPUBs aqui.',
   'Don’t use an EPUB': 'Não usar um EPUB',
+  'Read along': 'Ler em simultâneo',
 };

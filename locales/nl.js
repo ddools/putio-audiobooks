@@ -196,4 +196,5 @@ export default {
   'Up a folder': 'Map omhoog',
   'No folders or EPUBs in here.': 'Geen mappen of EPUB’s hier.',
   'Don’t use an EPUB': 'Geen EPUB gebruiken',
+  'Read along': 'Meelezen',
 };

@@ -197,4 +197,5 @@ export default {
   'Up a folder': 'Dossier parent',
   'No folders or EPUBs in here.': 'Aucun dossier ni EPUB ici.',
   'Don’t use an EPUB': 'Ne pas utiliser d’EPUB',
+  'Read along': 'Lecture synchronisée',
 };

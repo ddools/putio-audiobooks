@@ -196,4 +196,5 @@ export default {
   'Up a folder': 'Subir una carpeta',
   'No folders or EPUBs in here.': 'No hay carpetas ni EPUB aquí.',
   'Don’t use an EPUB': 'No usar un EPUB',
+  'Read along': 'Leer a la vez',
 };

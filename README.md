@@ -29,7 +29,7 @@ This is an unofficial app. It is not affiliated with or endorsed by put.io.
 2. Pick the folder your audiobooks live in.
 3. On your phone, tap **Install** in the app (or use "Add to Home Screen") to install it.
 
-No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): three public-domain [LibriVox](https://librivox.org) recordings, served from `demo/audiobooks/`. It keeps its own storage and syncs nothing.
+No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): four public-domain [LibriVox](https://librivox.org) recordings, served from `demo/audiobooks/`. *Frankenstein* (Chapter I) comes with its text from [Standard Ebooks](https://standardebooks.org/ebooks/mary-shelley/frankenstein), to try the reader. It keeps its own storage and syncs nothing.
 
 ## What it does
 

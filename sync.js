@@ -69,7 +69,7 @@ export function titleScore(a, b) {
 
 /* ---------- where the story is ---------- */
 
-const MATTER = /^(cover|title|title page|half title|copyright|copyright page|contents|table of contents|dedication|epigraph|also by|by the same author|other books|praise|about the authors?|about the publisher|acknowledge?ments?|newsletter|sign up|reading group|discussion|excerpt|preview|frontispiece|index|inhalt|inhaltsverzeichnis|impressum|indice|sommaire|table des matieres|inhoud|colofon|danksagung|agradecimientos|remerciements|ringraziamenti)\b/;
+const MATTER = /^(cover|title|title page|half title|copyright|copyright page|contents|table of contents|dedication|epigraph|also by|by the same author|other books|praise|about the authors?|about the publisher|acknowledge?ments?|newsletter|sign up|reading group|discussion|excerpt|preview|frontispiece|index|inhalt|inhaltsverzeichnis|impressum|imprint|colophon|indice|sommaire|table des matieres|inhoud|colofon|danksagung|agradecimientos|remerciements|ringraziamenti)\b/;
 const isMatter = (title) => MATTER.test(fold(title).replace(/[^\p{L}\p{N} ]+/gu, '').trim());
 
 // The stretch of text between the front matter (cover, copyright, contents) and the back matter

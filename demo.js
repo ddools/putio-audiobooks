@@ -1,4 +1,4 @@
-// The sample library behind ?demo: public-domain LibriVox recordings in demo/audiobooks/, laid out as
+// The sample library behind ?demo: public-domain LibriVox recordings in demo/audiobooks/ (and one EPUB), laid out as
 // Author/Book/track. It answers api.js in put.io's shapes, so the real scanner and player run on it.
 const BASE = 'demo/audiobooks/';
 const FILES = [
@@ -13,6 +13,9 @@ const FILES = [
   ['Edythe Mae Gordon/Selected Poems/05 I See You.mp3', 362934],
   ['Edythe Mae Gordon/Selected Poems/06 Young Love.mp3', 439080],
   ['W. W. Denslow/The Three Bears/The Three Bears.mp3', 3473158],
+  // Chapter I read by LibriVox, with the same text as an EPUB, so the demo can show the reader.
+  ['Mary Shelley/Frankenstein/Chapter 1.mp3', 6033920],
+  ['Mary Shelley/Frankenstein/Frankenstein.epub', 6826],
 ];
 
 export const ROOT = { id: 1, name: 'Audiobooks' };

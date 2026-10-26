@@ -54,7 +54,7 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): fo
 
 **Read along**
 
-- Put an EPUB next to an audiobook in put.io and a Read button appears in the player. Or pick one from anywhere in put.io in the book's menu.
+- Put an EPUB next to an audiobook in put.io and a Read button appears in the player. Books with one show a book badge on the cover, and the "Read along" filter lists them. Or pick one from anywhere in put.io in the book's menu.
 - The reader opens at the paragraph being read aloud and follows along. Tap any paragraph, then "Listen from here", to move the audio there.
 - Close the reader after reading ahead, and the player offers to carry on listening from where you stopped reading. Reading positions sync between devices.
 - Contents, text size, and serif or sans serif type.

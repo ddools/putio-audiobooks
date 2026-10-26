@@ -10,6 +10,7 @@ export const byName = (a, b) => collator.compare(unroman(a.name), unroman(b.name
 const AUDIO_EXT = /\.(mp3|m4b|m4a|aac|ogg|oga|opus|flac|wav)$/i;
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
 const ARCHIVE_EXT = /\.(zip|rar)$/i;
+const EPUB_EXT = /\.epub$/i;
 const DISC_DIR = /^(cd|disc|disk|part|volume|vol)[\s._-]*\d+$/i;
 const MAX_DEPTH = 6;
 
@@ -39,7 +40,25 @@ function pickCover(files) {
   const named = images.find((f) => /cover|folder|front/i.test(f.name));
   return (named || images[0])?.screenshot || null;
 }
-function makeBook(id, rawTitle, rawAuthor, files, cover) {
+// The EPUB that goes with a book: the folder's only one, or the one whose name shares most words with the book's.
+const words = (s) => new Set(tidy(s.replace(EPUB_EXT, '')).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1));
+export function pickEpub(epubs, name, alone) {
+  if (alone && epubs.length === 1) return epubs[0];
+  const want = words(name);
+  let best = null, score = 0;
+  for (const e of epubs) {
+    const have = words(e.name);
+    const both = [...want].filter((w) => have.has(w)).length;
+    // Most of the shorter name, and a fair share of both: "Emma" finds "Jane Austen - Emma", "It" not "It Ends With Us".
+    const most = both / (Math.min(want.size, have.size) || 1);
+    const share = both / (want.size + have.size - both || 1);
+    if (most >= 0.5 && share >= 0.3 && most + share > score) { best = e; score = most + share; }
+  }
+  return best;
+}
+const epubInfo = (f) => f && { id: f.id, name: f.name, size: f.size || 0 };
+
+function makeBook(id, rawTitle, rawAuthor, files, cover, epub) {
   let title = tidy(rawTitle);
   let author = rawAuthor ? tidy(rawAuthor) : '';
   // "Author - 2020 - Series, 5 - Title" says more than the parent folder does.
@@ -57,6 +76,7 @@ function makeBook(id, rawTitle, rawAuthor, files, cover) {
     cover: cover || files.find((f) => f.screenshot)?.screenshot || null,
     tracks: files.map((f) => ({ id: f.id, name: f.name, size: f.size || 0 })),
     added: files.reduce((m, f) => (f.created_at > m ? f.created_at : m), ''),
+    ...(epub && { epub: epubInfo(epub) }),
   };
 }
 
@@ -85,6 +105,7 @@ export async function scan(root, listFiles, archives = []) {
     const discs = isRoot ? [] : dirs.filter((d) => DISC_DIR.test(d.name)).sort(byName);
     let cover = pickCover(files);
     let tracks = files.filter((f) => f.file_type !== 'FOLDER' && AUDIO_EXT.test(f.name)).sort(byName);
+    const epubs = files.filter((f) => f.file_type !== 'FOLDER' && EPUB_EXT.test(f.name));
     for (const disc of discs) {
       const sub = await list(disc.id);
       tracks = tracks.concat(sub.filter((f) => AUDIO_EXT.test(f.name)).sort(byName));
@@ -99,17 +120,19 @@ export async function scan(root, listFiles, archives = []) {
     }
 
     if (isRoot) {
-      for (const f of tracks) out.push(makeBook('f' + f.id, f.name, '', [f], null));
+      for (const f of tracks) out.push(makeBook('f' + f.id, f.name, '', [f], null, pickEpub(epubs, f.name, false)));
     } else if (tracks.length) {
       // MP3s (and friends) in one folder are one book. Each M4B is its own
       // book, unless they are clearly numbered parts of the same thing.
       const m4bs = tracks.filter((f) => /\.m4b$/i.test(f.name));
       const rest = tracks.filter((f) => !/\.m4b$/i.test(f.name));
       const numberedParts = m4bs.length > 1 && new Set(m4bs.map((f) => f.name.toLowerCase().replace(/\d+/g, '#'))).size === 1;
-      if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover));
-      if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover));
-      else if (!rest.length && m4bs.length === 1 && !shelf) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover));
-      else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover));
+      const one = (rest.length ? 1 : 0) + (numberedParts || m4bs.length === 1 ? 1 : m4bs.length) === 1; // the folder holds a single book
+      const epub = pickEpub(epubs, folder.name, one);
+      if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover, epub));
+      if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover, epub));
+      else if (!rest.length && m4bs.length === 1 && !shelf) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover, epub));
+      else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover, pickEpub(epubs, f.name, false)));
     }
     return shelf || tracks.length > 0;
   }

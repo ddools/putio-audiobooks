@@ -74,6 +74,22 @@ const series = (await scan(dir('Root', dir('Audiobooks', dir('Martha Wells - 202
 assert.equal(series.title, 'Network Effect');
 assert.equal(series.author, 'Martha Wells · Murderbot Diaries #5');
 
+// EPUBs: a book's folder's only one is its own, whatever it's called; beside several books, the name decides.
+const epub = (name) => ({ id: nextId++, name, file_type: 'FILE', size: 5 });
+const lone = epub('martian-ebook.epub');
+const emma = epub('Jane Austen - Emma.epub');
+const shelf = await scan(dir('Root',
+  dir('Andy Weir - The Martian', file('01.mp3'), file('02.mp3'), lone),
+  dir('Austen', file('Emma.m4b'), file('Persuasion.m4b'), emma, epub('Sense and Sensibility.epub')),
+  file('Dune.m4b'), epub('Frank Herbert - Dune.epub'),
+  dir('No ebook', file('a.mp3'))), listFiles);
+const on = (title) => shelf.find((b) => b.title === title);
+assert.deepEqual(on('The Martian').epub, { id: lone.id, name: lone.name, size: 5 });
+assert.equal(on('Emma').epub.id, emma.id);
+assert.equal(on('Persuasion').epub, undefined);
+assert.equal(on('Dune').epub.name, 'Frank Herbert - Dune.epub');
+assert.equal(on('No ebook').epub, undefined);
+
 // A wide, nested tree never has more than 4 listings in flight.
 const wide = (depth) => dir('d', ...Array.from({ length: 6 }, () => (depth ? wide(depth - 1) : file('a.mp3'))));
 peak = 0;

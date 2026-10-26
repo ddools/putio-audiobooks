@@ -46,7 +46,7 @@ export function authUrl(clientId, redirectUri) {
 
 export const accountInfo = () => call('/account/info');
 
-// Every file in a folder, following the cursor past 1000 items.
+// Every file in a folder, following the cursor past 1000 items. parent is the folder itself.
 export async function listFiles(parentId) {
   if (DEMO) return { files: demo.list(parentId) };
   const first = await call('/files/list', { params: { parent_id: parentId, per_page: 1000 } });
@@ -57,7 +57,7 @@ export async function listFiles(parentId) {
     files.push(...(next.files || []));
     cursor = next.cursor;
   }
-  return { files };
+  return { files, parent: first.parent };
 }
 
 // A direct, streamable URL for a file. Tied to the caller's IP address.

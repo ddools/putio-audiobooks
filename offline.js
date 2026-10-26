@@ -71,3 +71,17 @@ export async function localUrl(id) {
   }
   return urls.get(id);
 }
+
+// A saved file's bytes, or null. Used to cut speech clips from downloaded tracks, and to reopen EPUBs.
+export async function blob(id) {
+  if (!supported) return null;
+  const res = await (await open()).match(key(id));
+  if (!res) { saved.delete(String(id)); return null; }
+  return res.blob();
+}
+// Keeps a small file, like an EPUB, so the book opens again without put.io.
+export async function save(id, data, type) {
+  if (!supported) return;
+  await (await open()).put(key(id), new Response(data, { headers: { 'Content-Type': type } }));
+  saved.add(String(id));
+}

@@ -3,6 +3,9 @@
   "target": {
     "namespace": "android_app",
     "package_name": "app.vercel.putio_audiobooks",
-    "sha256_cert_fingerprints": ["09:0C:1A:2F:2F:CA:2D:17:AE:4C:33:E2:85:4F:F7:57:C4:FC:91:6A:97:86:84:2B:59:DD:70:38:EB:5E:1B:54"]
+    "sha256_cert_fingerprints": [
+      "9C:50:9D:23:8F:86:5F:FF:1B:00:3A:3C:75:91:06:36:C9:1E:06:E4:1D:05:E8:74:F0:1A:64:D8:FA:A3:1E:4F",
+      "09:0C:1A:2F:2F:CA:2D:17:AE:4C:33:E2:85:4F:F7:57:C4:FC:91:6A:97:86:84:2B:59:DD:70:38:EB:5E:1B:54"
+    ]
   }
 }]

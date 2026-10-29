@@ -207,4 +207,6 @@ export default {
   'Copying books into the app…': 'Bücher werden in die App kopiert…',
   'Added 1 book from this device.': '1 Buch von diesem Gerät hinzugefügt.',
   'Added {n} books from this device.': '{n} Bücher von diesem Gerät hinzugefügt.',
+  'This book is no longer on this device. Add it again from Settings.': 'Dieses Buch ist nicht mehr auf diesem Gerät. Füge es in den Einstellungen erneut hinzu.',
+  'No longer on this device': 'Nicht mehr auf diesem Gerät',
 };

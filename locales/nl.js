@@ -201,4 +201,10 @@ export default {
   'Change library folder?': 'Bibliotheekmap wijzigen?',
   'Downloaded books that aren’t in “{name}” will be removed from this device.': 'Gedownloade boeken die niet in “{name}” staan, worden van dit apparaat verwijderd.',
   'Change folder': 'Map wijzigen',
+  'Add from this device': 'Toevoegen vanaf dit apparaat',
+  'Copy a folder of audiobooks into the app': 'Kopieer een map met luisterboeken naar de app',
+  'No new audiobooks in that folder.': 'Geen nieuwe luisterboeken in die map.',
+  'Copying books into the app…': 'Boeken worden naar de app gekopieerd…',
+  'Added 1 book from this device.': '1 boek toegevoegd vanaf dit apparaat.',
+  'Added {n} books from this device.': '{n} boeken toegevoegd vanaf dit apparaat.',
 };

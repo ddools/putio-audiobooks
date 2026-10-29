@@ -66,6 +66,7 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): fo
 - Remembers your place in every book. Positions, stars and hidden books sync between devices through put.io's own per-app config storage.
 - Download a book to listen without a connection. Downloads are kept in the browser's storage on that device, and only run while the app is open.
 - The app itself opens offline. Audio streams unless the book is downloaded.
+- Books already on your device: Settings → **Add from this device** and pick a folder. The same rules as put.io turn it into books. The files are copied into the app's storage, so they play offline, and they stay in the library through rescans. Removing one deletes the copy, not your original.
 - Light and dark themes, following the system.
 
 ## How it reads your library

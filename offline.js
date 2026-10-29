@@ -8,6 +8,7 @@ const CACHE = DEMO ? 'putio-audiobooks-demo-audio' : 'putio-audiobooks-audio';
 const key = (id) => `offline/${id}`;
 // Safari picks a decoder from the type, and put.io serves some audio as octet-stream.
 const TYPES = { mp3: 'audio/mpeg', m4b: 'audio/mp4', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', wav: 'audio/wav' };
+export const typeOf = (name) => TYPES[name.split('.').pop().toLowerCase()];
 
 const saved = new Set();
 const urls = new Map();
@@ -36,7 +37,7 @@ export async function download(book, getUrl, onProgress, signal) {
     const count = new TransformStream({
       transform(chunk, ctl) { got += chunk.byteLength; onProgress(Math.min(1, got / total)); ctl.enqueue(chunk); },
     });
-    const type = TYPES[t.name.split('.').pop().toLowerCase()] || res.headers.get('Content-Type') || 'audio/mpeg';
+    const type = typeOf(t.name) || res.headers.get('Content-Type') || 'audio/mpeg';
     // The entry only lands once the whole body has arrived, so a dropped connection leaves nothing half-saved.
     try { await cache.put(key(t.id), new Response(res.body.pipeThrough(count), { headers: { 'Content-Type': type } })); }
     catch (err) { got = before; throw err; }

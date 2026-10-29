@@ -7,7 +7,7 @@ import { coverTerm, searchCovers } from './covers.js';
 import { LANGS, lang, num, setLang, t, translate } from './i18n.js';
 import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
-import { byName, collator, scan, trackTitles } from './scan.js';
+import { byName, collator, fromFiles, scan, trackTitles } from './scan.js';
 import { compare, see, stamp } from './merge.js';
 import { learn, locate, makeMap, matchChapters, timedWords, wordAt, wordIndex } from './sync.js';
 import * as whisper from './whisper.js';
@@ -310,13 +310,13 @@ async function showFolders(trail = [{ id: 0, name: t('Your files') }]) {
   const go = () => {
     settings.root = { id: here.id, name: here.name };
     saveSettings();
-    library = [];
+    library = library.filter((b) => b.local);
     saveLibrary();
     showLibrary();
     rescan();
   };
   // The scan after a change drops downloads it can't find in the new folder, so say so first.
-  const choose = () => here.id === settings.root?.id || !library.some((b) => b.tracks.some((tr) => offline.has(tr.id))) ? go()
+  const choose = () => here.id === settings.root?.id || !library.some((b) => !b.local && b.tracks.some((tr) => offline.has(tr.id))) ? go()
     : sheet(t('Change library folder?'), (close) => [
         h('p', {}, t('Downloaded books that aren’t in “{name}” will be removed from this device.', { name: here.name })),
         h('div', { class: 'row' },
@@ -378,11 +378,13 @@ async function rescan() {
       if (prev?.art || prev?.art === null) Object.assign(book, { art: prev.art, cover: prev.art });
       if (prev?.sought) book.sought = true;
     }
+    const fromPutio = found.length;
+    found.push(...library.filter((b) => b.local));
     found.sort((a, b) => collator.compare(a.title, b.title));
     library = found;
     saveLibrary();
     // An empty scan is more likely a glitch than a cleared-out library; don't delete downloads over it.
-    if (found.length) offline.keepOnly(new Set(found.flatMap((b) => [...b.tracks.map((t) => String(t.id)), epubOf(b)?.id].filter(Boolean).map(String)))).catch(() => {});
+    if (fromPutio) offline.keepOnly(new Set(found.flatMap((b) => [...b.tracks.map((t) => String(t.id)), epubOf(b)?.id, b.local && localCover(b)].filter(Boolean).map(String)))).catch(() => {});
     if (cur) {
       const same = library.find((b) => b.id === cur.book.id);
       if (same) cur.book = same;
@@ -393,6 +395,43 @@ async function rescan() {
   scanning = false;
   if (api.hasToken()) renderLibrary();
   seekArt();
+}
+
+/* ---------- books from this device ---------- */
+
+const localCover = (book) => book.cover?.startsWith('offline/') && book.cover.slice(8);
+// Copies a picked folder's audiobooks into the downloads cache, so they play like downloaded books and survive a rescan.
+// ponytail: a copy, so each book takes its space twice; keep FileSystemHandles instead if that hurts (Chromium only).
+function addLocal() {
+  const input = h('input', { type: 'file', webkitdirectory: true, multiple: true });
+  input.addEventListener('change', async () => {
+    const { root, listFiles, files } = fromFiles(input.files);
+    const found = (await scan(root, listFiles)).filter((b) => !library.some((x) => x.id === b.id));
+    if (!found.length) return toast(t('No new audiobooks in that folder.'));
+    toast(t('Copying books into the app…'));
+    navigator.storage?.persist?.().catch(() => {});
+    let added = 0;
+    try {
+      for (const book of found) {
+        for (const id of [...book.tracks.map((tr) => tr.id), book.epub?.id, localCover(book)].filter(Boolean)) {
+          const file = files.get(id);
+          if (!offline.has(id)) await offline.save(id, file, offline.typeOf(file.name) || file.type || 'application/octet-stream');
+        }
+        book.local = true;
+        library.push(book);
+        added++;
+      }
+    } catch (err) {
+      toast(err?.name === 'QuotaExceededError' ? t('Not enough space on this device.') : err?.message || t('Something went wrong.'));
+    }
+    if (!added) return;
+    library.sort((a, b) => collator.compare(a.title, b.title));
+    saveLibrary();
+    renderLibrary();
+    toast(added === 1 ? t('Added 1 book from this device.') : t('Added {n} books from this device.', { n: added }));
+    seekArt();
+  });
+  input.click();
 }
 
 // After a scan: read the tags of every M4B first, so the cover search runs on real titles.
@@ -523,7 +562,13 @@ async function startDownload(book) {
 }
 async function removeDownload(book) {
   if (cur?.book.id === book.id) stopPlayback();
-  await offline.remove(book).catch(() => {});
+  // A local book leaves the library too: there is nothing to download it from again.
+  const own = book.local ? [book.epub?.id, localCover(book)].filter(Boolean).map((id) => ({ id })) : [];
+  await offline.remove({ tracks: [...book.tracks, ...own] }).catch(() => {});
+  if (book.local) {
+    library = library.filter((b) => b.id !== book.id);
+    saveLibrary();
+  }
   renderLibrary();
 }
 
@@ -546,7 +591,7 @@ function bookCard(book, listRow) {
       // Starts a download in one tap; cancelling or removing one goes through the menu.
       !offline.supported ? null
         : downloads.has(book.id) ? mark('download', offlineLabel(book), () => openBookMenu(book), 'mark-save busy')
-        : offline.hasBook(book) ? mark('saved', t('Downloaded'), () => openBookMenu(book), 'mark-save on')
+        : offline.hasBook(book) || book.local ? mark('saved', t('Downloaded'), () => openBookMenu(book), 'mark-save on')
         : mark('download', t('Download'), () => startDownload(book)),
       mark('more', t('More'), () => openBookMenu(book))));
 }
@@ -684,7 +729,8 @@ function openSettings() {
   sheet(t('Settings'), (close) => [
     ...group(t('Library'),
       row(t('Library folder'), settings.root?.name || t('Not set'), chev(), () => { close(); showFolders(); }),
-      row(t('Rescan'), t('Pick up new books from put.io'), null,() => { close(); rescan(); })),
+      row(t('Rescan'), t('Pick up new books from put.io'), null,() => { close(); rescan(); }),
+      offline.supported && !DEMO ? row(t('Add from this device'), t('Copy a folder of audiobooks into the app'), chev(), () => { close(); addLocal(); }) : null),
     ...group(t('Playback'),
       isIOS ? row(t('Chapter buttons on lock screen'), t('Instead of skip back and forward'),
         h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.lockChapters, onchange: (e) => { settings.lockChapters = e.target.checked; saveSettings(); setupMediaSession(); } })) : null),

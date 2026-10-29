@@ -80,6 +80,39 @@ function makeBook(id, rawTitle, rawAuthor, files, cover, epub) {
   };
 }
 
+// cyrb53: a 53-bit string hash, plenty for one person's files.
+function hash(s) {
+  let a = 0xdeadbeef, b = 0x41c6ce57;
+  for (const c of s) { const k = c.codePointAt(0); a = Math.imul(a ^ k, 2654435761); b = Math.imul(b ^ k, 1597334677); }
+  a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
+  b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
+  return 'l' + (4294967296 * (2097151 & b) + (a >>> 0)).toString(36);
+}
+// A folder picked on this device (Files with webkitRelativePath) as a tree scan() can walk, and each file by id.
+// Ids come from the path and size, so picking the same folder again finds the same books.
+// Images point at offline/<id>, where sw.js serves them once they are saved.
+export function fromFiles(list) {
+  const kids = new Map([['l', []]]);
+  const files = new Map();
+  for (const file of list) {
+    const parts = (file.webkitRelativePath || file.name).split('/');
+    let parent = 'l';
+    for (let i = 0; i < parts.length - 1; i++) {
+      const id = hash(parts.slice(0, i + 1).join('/'));
+      if (!kids.has(id)) { kids.set(id, []); kids.get(parent).push({ id, name: parts[i], file_type: 'FOLDER' }); }
+      parent = id;
+    }
+    const id = hash(`${parts.join('/')}:${file.size}`);
+    files.set(id, file);
+    kids.get(parent).push({ id, name: file.name, file_type: 'FILE', size: file.size, created_at: new Date(file.lastModified || 0).toISOString(),
+      ...(IMAGE_EXT.test(file.name) && { screenshot: `offline/${id}` }) });
+  }
+  // The picked folder is the library, like put.io's, unless it holds audio itself: then it is one book.
+  const top = kids.get('l').length === 1 && kids.get('l')[0].file_type === 'FOLDER' && kids.get('l')[0];
+  const root = top && !kids.get(top.id).some((f) => AUDIO_EXT.test(f.name)) ? top : { id: 'l', name: '' };
+  return { root, listFiles: async (id) => ({ files: kids.get(id) }), files };
+}
+
 // Every book under root. listFiles(id) resolves to { files }, as api.listFiles does.
 // Archives can't be played; their names go into `archives` so the caller can say so.
 export async function scan(root, listFiles, archives = []) {

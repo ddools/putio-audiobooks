@@ -201,4 +201,10 @@ export default {
   'Change library folder?': '¿Cambiar la carpeta de la biblioteca?',
   'Downloaded books that aren’t in “{name}” will be removed from this device.': 'Los libros descargados que no estén en «{name}» se borrarán de este dispositivo.',
   'Change folder': 'Cambiar carpeta',
+  'Add from this device': 'Añadir desde este dispositivo',
+  'Copy a folder of audiobooks into the app': 'Copia una carpeta de audiolibros en la app',
+  'No new audiobooks in that folder.': 'No hay audiolibros nuevos en esa carpeta.',
+  'Copying books into the app…': 'Copiando libros en la app…',
+  'Added 1 book from this device.': 'Se añadió 1 libro desde este dispositivo.',
+  'Added {n} books from this device.': 'Se añadieron {n} libros desde este dispositivo.',
 };

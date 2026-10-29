@@ -169,7 +169,6 @@ select {
 .zipped { text-align: center; }
 .foot { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 24px 16px; }
 .foot .icon-btn { color: inherit; }
-.foot img { border-radius: 6px; }
 /* keeps the footer clear of the fixed "Use this folder" button */
 [data-view="folders"] .foot { padding-bottom: 96px; }
 

@@ -1,7 +1,6 @@
 // Deutsch. Keys are the English text from app.js, api.js and index.html; see i18n.js.
 export default {
   'Source on GitHub': 'Quellcode auf GitHub',
-  'NYT audio best sellers': 'NYT-Hörbuch-Bestseller',
   'Library': 'Bibliothek',
   'Playback': 'Wiedergabe',
   'General': 'Allgemein',

@@ -2,7 +2,6 @@
 //   is a non-breaking space, for French spacing around « », ?, : and %.
 export default {
   'Source on GitHub': 'Code source sur GitHub',
-  'NYT audio best sellers': 'Meilleures ventes audio du NYT',
   'Library': 'Bibliothèque',
   'Playback': 'Lecture',
   'General': 'Général',

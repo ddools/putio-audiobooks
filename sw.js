@@ -1,7 +1,7 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v17';
+const CACHE = PREFIX + 'v18';
 // vendor/ has its own cache, named for the library's version, so app updates don't download it again.
 const VENDOR = 'putio-audiobooks-vendor-3.8.1';
 // Cover art from other sites, kept across app updates.
@@ -11,7 +11,7 @@ const SHELL = [
   'clip.js', 'epub.js', 'sync.js', 'whisper.js', 'whisper-worker.js', 'zip.js',
   'locales/de.js', 'locales/es.js', 'locales/fr.js', 'locales/it.js', 'locales/nl.js', 'locales/pt.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-  'icons/apple-touch-icon.png', 'icons/connect-art.svg', 'icons/chill.png',
+  'icons/apple-touch-icon.png', 'icons/connect-art.svg',
 ];
 
 self.addEventListener('install', (e) => {

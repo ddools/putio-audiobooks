@@ -1,6 +1,6 @@
 // Run with: node test/scan.test.mjs
 import assert from 'node:assert/strict';
-import { scan, trackTitle, trackTitles } from '../scan.js';
+import { fromFiles, scan, trackTitle, trackTitles } from '../scan.js';
 
 // A fake put.io: folder id -> its files. Listings answer a tick later, so overlap can be counted.
 let nextId = 1;
@@ -95,5 +95,24 @@ const wide = (depth) => dir('d', ...Array.from({ length: 6 }, () => (depth ? wid
 peak = 0;
 await scan(wide(2), listFiles);
 assert.equal(peak, 4);
+
+// A folder picked on the device. A folder of books is the library: its own name is no one's author.
+const picked = (...paths) => paths.map((p) => ({ name: p.split('/').pop(), webkitRelativePath: p, size: 5, lastModified: 0 }));
+const lib = picked('Audiobooks/Martha Wells/Network Effect/02.mp3', 'Audiobooks/Martha Wells/Network Effect/01.mp3',
+  'Audiobooks/Martha Wells/Network Effect/cover.jpg', 'Audiobooks/Emma.m4b', 'Audiobooks/Emma.epub');
+let local = fromFiles(lib);
+let mine = await scan(local.root, local.listFiles);
+const effect = mine.find((b) => b.title === 'Network Effect');
+assert.equal(effect.author, 'Martha Wells');
+assert.deepEqual(effect.tracks.map((t) => t.name), ['01.mp3', '02.mp3']);
+assert.match(effect.cover, /^offline\/l/);
+assert.equal(local.files.get(effect.cover.slice(8)).name, 'cover.jpg');
+assert.equal(local.files.get(mine.find((b) => b.title === 'Emma').epub.id).name, 'Emma.epub');
+// The same folder picked again gives the same ids, so places and downloads line up.
+assert.deepEqual((await scan(fromFiles(lib).root, fromFiles(lib).listFiles)).map((b) => b.id), mine.map((b) => b.id));
+// A folder of audio is one book, not a book per file.
+local = fromFiles(picked('Dune/1.mp3', 'Dune/2.mp3'));
+mine = await scan(local.root, local.listFiles);
+assert.deepEqual(mine.map((b) => [b.title, b.tracks.length]), [['Dune', 2]]);
 
 console.log('scan.js ok');

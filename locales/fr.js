@@ -202,4 +202,10 @@ export default {
   'Change library folder?': 'Changer le dossier de la bibliothèque ?',
   'Downloaded books that aren’t in “{name}” will be removed from this device.': 'Les livres téléchargés qui ne sont pas dans « {name} » seront supprimés de cet appareil.',
   'Change folder': 'Changer de dossier',
+  'Add from this device': 'Ajouter depuis cet appareil',
+  'Copy a folder of audiobooks into the app': 'Copier un dossier de livres audio dans l’app',
+  'No new audiobooks in that folder.': 'Aucun nouveau livre audio dans ce dossier.',
+  'Copying books into the app…': 'Copie des livres dans l’app…',
+  'Added 1 book from this device.': '1 livre ajouté depuis cet appareil.',
+  'Added {n} books from this device.': '{n} livres ajoutés depuis cet appareil.',
 };

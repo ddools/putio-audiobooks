@@ -208,4 +208,5 @@ export default {
   'Copying books into the app…': 'Copie des livres dans l’app…',
   'Added 1 book from this device.': '1 livre ajouté depuis cet appareil.',
   'Added {n} books from this device.': '{n} livres ajoutés depuis cet appareil.',
+  'Read along': 'Lecture synchronisée',
 };

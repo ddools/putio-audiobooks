@@ -582,6 +582,7 @@ function bookCard(book, listRow) {
   return h('div', { class: 'book' + (hidden ? ' is-hidden' : ''), 'data-book': book.id },
     h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
       coverEl(book),
+      epubOf(book) ? h('span', { class: 'has-ebook', title: t('Read along'), html: icon('book') }, h('span', { class: 'sr-only' }, t('Read along'))) : null,
       h('span', { class: 'bar-thin', style: p?.done || p?.p > 0.005 ? '' : 'visibility:hidden' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
       h('span', { class: 'book-title' }, book.title),
       h('span', { class: 'book-sub' }, [book.author, progressLabel(book, listRow), offlineLabel(book)].filter(Boolean).join(' · '))),
@@ -644,7 +645,7 @@ function renderLibrary() {
   if (!hiddenCount) showHidden = false;
   const shown = showHidden ? library : library.filter((b) => !marks.hidden.has(b.id));
   const status = (b) => (positions[b.id]?.done ? 'done' : positions[b.id]?.p > 0.005 ? 'going' : 'new');
-  const keep = { all: () => true, starred: (b) => marks.starred.has(b.id), saved: offline.hasBook };
+  const keep = { all: () => true, starred: (b) => marks.starred.has(b.id), saved: offline.hasBook, ebook: (b) => !!epubOf(b) };
   const match = shown.filter((b) => !q || `${b.title} ${b.author}`.toLowerCase().includes(q))
     .filter(keep[filter] || ((b) => status(b) === filter))
     .sort((a, b) => marks.starred.has(b.id) - marks.starred.has(a.id) || sortCmp[settings.sort](a, b));
@@ -660,7 +661,7 @@ function renderLibrary() {
       hiddenCount ? h('button', { class: 'link', type: 'button', onclick: () => { showHidden = !showHidden; renderLibrary(); } },
         showHidden ? t('Hide hidden') : t('Show all ({n} hidden)', { n: hiddenCount })) : null,
       h('button', { class: 'link', type: 'button', onclick: openSort }, t('Sort: {by}', { by: SORTS[settings.sort] }))),
-    h('div', { class: 'filters' }, [['all', t('All')], ['going', t('In progress')], ['new', t('Not started')], ['done', t('Finished')], ['starred', t('Starred')], ...(offline.supported ? [['saved', t('Downloaded')]] : [])].map(([key, label]) =>
+    h('div', { class: 'filters' }, [['all', t('All')], ['going', t('In progress')], ['new', t('Not started')], ['done', t('Finished')], ['starred', t('Starred')], ...(library.some(epubOf) ? [['ebook', t('Read along')]] : []), ...(offline.supported ? [['saved', t('Downloaded')]] : [])].map(([key, label]) =>
       h('button', { class: key === filter ? 'chip on' : 'chip', type: 'button', 'aria-pressed': String(key === filter), onclick: () => { filter = key; renderLibrary(); } }, label))),
     ...(!match.length ? [h('p', { class: 'empty' }, t('Nothing matches that.'))] : settings.group ? authorGroups(match) : [bookGrid(match)]),
     ...(zipped ? [zippedHint()] : [])

@@ -6,4 +6,4 @@ export const CLIENT_ID = '9867';
 // ?demo opens a sample library of public-domain books, with no put.io account. See demo.js.
 export const DEMO = new URLSearchParams(globalThis.location?.search).has('demo');
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';

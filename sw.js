@@ -1,9 +1,11 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v16';
+const CACHE = PREFIX + 'v17';
 // vendor/ has its own cache, named for the library's version, so app updates don't download it again.
 const VENDOR = 'putio-audiobooks-vendor-3.8.1';
+// Cover art from other sites, kept across app updates.
+const COVERS = 'putio-audiobooks-covers';
 const SHELL = [
   './', 'index.html', 'styles.css', 'boot.js', 'app.js', 'api.js', 'm4b.js', 'config.js', 'covers.js', 'demo.js', 'offline.js', 'scan.js', 'i18n.js',
   'clip.js', 'epub.js', 'sync.js', 'whisper.js', 'whisper-worker.js', 'zip.js',
@@ -27,6 +29,15 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
+  // Covers come from put.io, Apple and Open Library. Keep each one shown, so the art is still there offline.
+  // ponytail: never trimmed, so old picker thumbs pile up; prune it if the cache gets big.
+  if (req.method === 'GET' && req.destination === 'image' && url.origin !== self.location.origin) {
+    e.respondWith(caches.open(COVERS).then(async (cache) => (await cache.match(req.url)) ||
+      fetch(req.url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
+        .catch(() => fetch(req)) // a host without CORS still gives an image <img> can show
+        .then((res) => { if (res.ok || res.type === 'opaque') cache.put(req.url, res.clone()); return res; })));
+    return;
+  }
   // The demo's audio is too big for the shell cache; offline.js saves it when a book is downloaded.
   if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/demo/')) return;
   // The speech library is large and only changes with its version: cache it on first use, never refresh it.

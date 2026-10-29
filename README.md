@@ -140,7 +140,8 @@ Run the checks with `node --test`.
 | `whisper.js`, `whisper-worker.js`, `vendor/` | On-device speech recognition (transformers.js and ONNX Runtime; see `vendor/README.md`) |
 | `covers.js` | Cover art search |
 | `demo.js`, `demo/` | The sample library behind `?demo` |
-| `offline.js` | Downloaded books |
+| `offline.js` | Downloaded books (`sw.js` serves them a range at a time) |
+| `merge.js` | Sync with put.io: which copy of a position, star or reading spot wins |
 | `i18n.js`, `locales/` | Translations: German, Spanish, French, Italian, Dutch and Portuguese (Portugal). A new string needs an entry in each `locales/*.js`; `node test/i18n.test.mjs` lists any that are missing |
 | `sw.js` | Service worker |
 | `styles.css` | Styles |

@@ -198,4 +198,7 @@ export default {
   'Up a folder': 'Subir uma pasta',
   'No folders or EPUBs in here.': 'Não há pastas nem EPUBs aqui.',
   'Don’t use an EPUB': 'Não usar um EPUB',
+  'Change library folder?': 'Mudar a pasta da biblioteca?',
+  'Downloaded books that aren’t in “{name}” will be removed from this device.': 'Os livros transferidos que não estejam em «{name}» serão removidos deste dispositivo.',
+  'Change folder': 'Mudar de pasta',
 };

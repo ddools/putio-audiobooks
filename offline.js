@@ -67,7 +67,8 @@ export async function localUrl(id) {
   if (!urls.has(id)) {
     const res = await (await open()).match(key(id));
     if (!res) { saved.delete(id); return null; }
-    urls.set(id, URL.createObjectURL(await res.blob()));
+    // sw.js serves the file from the cache a range at a time. Without it (localhost, first visit), a blob URL.
+    urls.set(id, globalThis.navigator?.serviceWorker?.controller ? new URL(key(id), location.href).href : URL.createObjectURL(await res.blob()));
   }
   return urls.get(id);
 }

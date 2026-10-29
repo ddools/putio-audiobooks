@@ -198,4 +198,7 @@ export default {
   'Up a folder': 'Map omhoog',
   'No folders or EPUBs in here.': 'Geen mappen of EPUB’s hier.',
   'Don’t use an EPUB': 'Geen EPUB gebruiken',
+  'Change library folder?': 'Bibliotheekmap wijzigen?',
+  'Downloaded books that aren’t in “{name}” will be removed from this device.': 'Gedownloade boeken die niet in “{name}” staan, worden van dit apparaat verwijderd.',
+  'Change folder': 'Map wijzigen',
 };

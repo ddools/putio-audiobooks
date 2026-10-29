@@ -8,6 +8,7 @@ import { LANGS, lang, num, setLang, t, translate } from './i18n.js';
 import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
 import { byName, collator, scan, trackTitles } from './scan.js';
+import { compare, see, stamp } from './merge.js';
 import { learn, locate, makeMap, matchChapters, timedWords, wordAt, wordIndex } from './sync.js';
 import * as whisper from './whisper.js';
 
@@ -128,7 +129,7 @@ function toast(msg) {
 
 // A page fills the screen and slides in from the side; a plain sheet rises from the bottom.
 function sheet(title, build, page) {
-  const dlg = h('dialog', { class: page ? 'sheet page' : 'sheet' });
+  const dlg = h('dialog', { class: page ? 'sheet page' : 'sheet', 'aria-label': title || null });
   const close = () => dlg.close();
   dlg.append(
     page ? h('div', { class: 'page-head' }, iconBtn('left', t('Back'), close), h('h3', {}, title), h('span', { class: 'spacer' }))
@@ -178,7 +179,7 @@ function pushMark(id) {
 }
 function toggleMark(kind, id) {
   if (!marks[kind].delete(id)) marks[kind].add(id);
-  markAt[id] = Date.now();
+  markAt[id] = stamp();
   saveMarks();
   pushMark(id);
   const card = document.activeElement?.closest('[data-book]');
@@ -193,6 +194,8 @@ function toggleMark(kind, id) {
 const reading = store.get('reading', {});
 const epubLinks = store.get('epubLinks', {});
 const anchors = store.get('anchors', {});
+for (const v of [...Object.values(positions), ...Object.values(reading), ...Object.values(epubLinks)]) see(v?.at);
+for (const at of Object.values(markAt)) see(at);
 const pushReading = (id) => api.setConfig('read_' + id, reading[id]).catch(() => {});
 const pushLink = (id) => api.setConfig('epub_' + id, epubLinks[id]).catch(() => {});
 const epubOf = (book) => (epubLinks[book.id] ? (epubLinks[book.id].none ? null : epubLinks[book.id]) : book.epub || null);
@@ -304,7 +307,7 @@ async function showFolders(trail = [{ id: 0, name: t('Your files') }]) {
   document.body.dataset.view = 'folders';
   const here = trail[trail.length - 1];
   const listEl = h('div', { class: 'folder-list' }, h('p', { class: 'empty' }, t('Loading…')));
-  const choose = () => {
+  const go = () => {
     settings.root = { id: here.id, name: here.name };
     saveSettings();
     library = [];
@@ -312,6 +315,14 @@ async function showFolders(trail = [{ id: 0, name: t('Your files') }]) {
     showLibrary();
     rescan();
   };
+  // The scan after a change drops downloads it can't find in the new folder, so say so first.
+  const choose = () => here.id === settings.root?.id || !library.some((b) => b.tracks.some((tr) => offline.has(tr.id))) ? go()
+    : sheet(t('Change library folder?'), (close) => [
+        h('p', {}, t('Downloaded books that aren’t in “{name}” will be removed from this device.', { name: here.name })),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); go(); } }, t('Change folder')),
+          h('button', { class: 'btn', type: 'button', onclick: close }, t('Cancel'))),
+      ]);
   app.replaceChildren(
     h('header', { class: 'bar' },
       trail.length > 1
@@ -633,7 +644,7 @@ function openBookMenu(book) {
   const p = positions[book.id];
   const going = !p?.done && p?.p > 0.005;
   const epub = epubOf(book);
-  sheet('', (close) => [
+  const dlg = sheet('', (close) => [
     h('div', { class: 'page-book' }, coverEl(book),
       h('div', {}, h('h2', {}, book.title), book.author ? h('p', {}, book.author) : null)),
     ...group(null,
@@ -656,6 +667,7 @@ function openBookMenu(book) {
           close();
         }) : null),
   ], true);
+  dlg.setAttribute('aria-label', book.title); // the page has no title bar; the book's name is in the page
 }
 
 function openSort() {
@@ -805,7 +817,9 @@ function startPos(book) {
   const p = positions[book.id];
   if (!p || p.done) return { t: 0, s: 0 };
   const rewind = Date.now() - p.at > 5 * 60 * 1000 ? 10 : 0;
-  return { t: clamp(p.t || 0, 0, book.tracks.length - 1), s: Math.max(0, (p.s || 0) - rewind) };
+  // By the file's id when saved with one, so a file added to the book later doesn't shift the place.
+  const byId = book.tracks.findIndex((tr) => tr.id === p.id);
+  return { t: byId >= 0 ? byId : clamp(p.t || 0, 0, book.tracks.length - 1), s: Math.max(0, (p.s || 0) - rewind) };
 }
 
 async function loadTrack(ti, time = 0, autoplay = false) {
@@ -971,7 +985,7 @@ function savePosition(force) {
   const t = Date.now();
   if (!force && t - lastSave < 5000) return;
   lastSave = t;
-  positions[cur.book.id] = { t: cur.ti, s: Math.floor(now()), at: t, p: +bookFraction().toFixed(4) };
+  positions[cur.book.id] = { t: cur.ti, id: cur.book.tracks[cur.ti].id, s: Math.floor(now()), at: stamp(), p: +bookFraction().toFixed(4) };
   const left = bookSecondsLeft();
   if (left != null) positions[cur.book.id].left = Math.round(left * settings.speed);
   savePositions();
@@ -984,39 +998,43 @@ function pushPosition(bookId) {
 // Set by hand from the book menu. A reset is stored, not deleted, so it wins over other devices.
 function setProgress(book, done) {
   if (cur?.book.id === book.id) stopPlayback();
-  positions[book.id] = { t: 0, s: 0, at: Date.now(), p: done ? 1 : 0, ...(done && { done: true }) };
+  positions[book.id] = { t: 0, s: 0, at: stamp(), p: done ? 1 : 0, ...(done && { done: true }) };
   savePositions();
   pushPosition(book.id);
   renderLibrary();
 }
+// Everything this device syncs, keyed the way put.io's config holds it.
+const synced = () => Object.fromEntries([
+  ...Object.entries(positions).map(([id, v]) => ['pos_' + id, v]),
+  ...Object.entries(markAt).map(([id, at]) => ['mark_' + id, { at }]),
+  ...Object.entries(reading).map(([id, v]) => ['read_' + id, v]),
+  ...Object.entries(epubLinks).map(([id, v]) => ['epub_' + id, v]),
+]);
+const SYNC_KEY = /^(pos|mark|read|epub)_(.+)$/;
 async function pullPositions() {
   if (!api.hasToken()) return;
   let remote;
   try { remote = await api.getConfig(); } catch { return; }
+  for (const value of Object.values(remote)) see(value?.at);
   let changed = false;
   let marked = false;
   let read = false;
-  for (const [key, value] of Object.entries(remote)) {
-    if (!value || typeof value.at !== 'number') continue;
-    if (key.startsWith('mark_')) {
-      const id = key.slice(5);
-      if (markAt[id] >= value.at) continue;
+  for (const key of compare(synced(), remote).take) {
+    const value = remote[key];
+    const [, kind, id] = SYNC_KEY.exec(key) || [];
+    if (kind === 'mark') {
       marks.starred[value.s ? 'add' : 'delete'](id);
       marks.hidden[value.h ? 'add' : 'delete'](id);
       markAt[id] = value.at;
       marked = true;
       continue;
     }
-    if (key.startsWith('read_') || key.startsWith('epub_')) {
-      const [list, id] = key.startsWith('read_') ? [reading, key.slice(5)] : [epubLinks, key.slice(5)];
-      if (list[id]?.at >= value.at) continue;
-      list[id] = value;
+    if (kind === 'read' || kind === 'epub') {
+      (kind === 'read' ? reading : epubLinks)[id] = value;
       read = true;
       continue;
     }
-    if (!key.startsWith('pos_')) continue;
-    const id = key.slice(4);
-    if (positions[id] && positions[id].at >= value.at) continue;
+    if (kind !== 'pos') continue;
     if (cur?.book.id === id && !audio.paused) continue;
     positions[id] = value;
     changed = true;
@@ -1029,14 +1047,15 @@ async function pullPositions() {
   // Marks made before they synced have no time yet. Stamp them now that put.io's own have been applied.
   for (const id of new Set([...marks.starred, ...marks.hidden])) {
     if (markAt[id]) continue;
-    markAt[id] = Date.now();
+    markAt[id] = stamp();
     marked = true;
   }
   // Whatever put.io lacks or holds an older copy of goes up now: sends that failed offline are not retried elsewhere.
-  for (const [id, p] of Object.entries(positions)) if (!(remote['pos_' + id]?.at >= p.at)) pushPosition(id);
-  for (const id of Object.keys(markAt)) if (!(remote['mark_' + id]?.at >= markAt[id])) pushMark(id);
-  for (const [id, r] of Object.entries(reading)) if (!(remote['read_' + id]?.at >= r.at)) pushReading(id);
-  for (const [id, l] of Object.entries(epubLinks)) if (!(remote['epub_' + id]?.at >= l.at)) pushLink(id);
+  const push = { pos: pushPosition, mark: pushMark, read: pushReading, epub: pushLink };
+  for (const key of compare(synced(), remote).send) {
+    const [, kind, id] = SYNC_KEY.exec(key);
+    push[kind](id);
+  }
   if (marked) saveMarks();
   if (changed) savePositions();
   if (read) { store.set('reading', reading); store.set('epubLinks', epubLinks); refreshPlayer(); }
@@ -1138,7 +1157,7 @@ function tick() {
   else ui.range.value = span ? Math.round((rel / span) * 1000) : 0;
   ui.range.style.setProperty('--fill', `${ui.range.value / 10}%`);
   setText(ui.elapsed, fmt(rel));
-  setText(ui.remain, span ? `-${fmt(span - rel)}` : '');
+  setText(ui.remain, span ? `-${fmt((span - rel) / (settings.speed || 1))}` : ''); // in listening time, like the book's time left
 
   const frac = bookFraction();
   const left = bookSecondsLeft();
@@ -1547,7 +1566,7 @@ function readerTick() {
 function saveReading(push) {
   if (!cur || !ebook || !rd.flat.length || rd.following) return;
   const id = cur.book.id;
-  reading[id] = { c: topPos(), at: Date.now() };
+  reading[id] = { c: topPos(), at: stamp() };
   store.set('reading', reading);
   const now = Date.now();
   if (push || now - (rd.pushedAt || 0) > 30000) { rd.pushedAt = now; pushReading(id); }
@@ -1647,7 +1666,7 @@ function openEpubPicker(book) {
     const where = h('p', { class: 'fine' });
     const list = h('div', { class: 'picker-list' });
     const pick = (f) => {
-      epubLinks[book.id] = f ? { id: f.id, name: f.name, size: f.size || 0, at: Date.now() } : { none: true, at: Date.now() };
+      epubLinks[book.id] = f ? { id: f.id, name: f.name, size: f.size || 0, at: stamp() } : { none: true, at: stamp() };
       store.set('epubLinks', epubLinks);
       pushLink(book.id);
       close();
@@ -1804,9 +1823,9 @@ audio.addEventListener('ended', () => {
     const stopHere = sleep?.mode === 'chapter';
     if (stopHere) sleep = null;
     loadTrack(cur.ti + 1, 0, !stopHere);
-    positions[book.id] = { t: cur.ti, s: 0, at: Date.now(), p: +bookFraction().toFixed(4) };
+    positions[book.id] = { t: cur.ti, id: book.tracks[cur.ti].id, s: 0, at: stamp(), p: +bookFraction().toFixed(4) };
   } else {
-    positions[book.id] = { t: 0, s: 0, at: Date.now(), p: 1, done: true };
+    positions[book.id] = { t: 0, s: 0, at: stamp(), p: 1, done: true };
     sleep = null;
   }
   savePositions();

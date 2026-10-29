@@ -198,4 +198,7 @@ export default {
   'Up a folder': 'Einen Ordner höher',
   'No folders or EPUBs in here.': 'Hier sind keine Ordner oder EPUBs.',
   'Don’t use an EPUB': 'Kein EPUB verwenden',
+  'Change library folder?': 'Ordner für die Bibliothek ändern?',
+  'Downloaded books that aren’t in “{name}” will be removed from this device.': 'Heruntergeladene Bücher, die nicht in „{name}“ sind, werden von diesem Gerät entfernt.',
+  'Change folder': 'Ordner ändern',
 };

@@ -1,7 +1,7 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v19';
+const CACHE = PREFIX + 'v20';
 // vendor/ has its own cache, named for the library's version, so app updates don't download it again.
 const VENDOR = 'putio-audiobooks-vendor-3.8.1';
 // Cover art from other sites, kept across app updates.

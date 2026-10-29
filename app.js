@@ -540,7 +540,8 @@ const sortCmp = {
 const downloads = new Map();
 function offlineLabel(book) {
   const job = downloads.get(book.id);
-  return job ? t('Downloading {n}%', { n: Math.round(job.p * 100) }) : offline.hasBook(book) ? t('Downloaded') : '';
+  return job ? t('Downloading {n}%', { n: Math.round(job.p * 100) }) : offline.hasBook(book) ? t('Downloaded')
+    : book.local ? t('No longer on this device') : '';
 }
 async function startDownload(book) {
   if (downloads.has(book.id)) return;
@@ -592,7 +593,7 @@ function bookCard(book, listRow) {
       // Starts a download in one tap; cancelling or removing one goes through the menu.
       !offline.supported ? null
         : downloads.has(book.id) ? mark('download', offlineLabel(book), () => openBookMenu(book), 'mark-save busy')
-        : offline.hasBook(book) || book.local ? mark('saved', t('Downloaded'), () => openBookMenu(book), 'mark-save on')
+        : offline.hasBook(book) || book.local ? mark('saved', offlineLabel(book), () => openBookMenu(book), 'mark-save on')
         : mark('download', t('Download'), () => startDownload(book)),
       mark('more', t('More'), () => openBookMenu(book))));
 }
@@ -704,11 +705,11 @@ function openBookMenu(book) {
     ...group(null,
       offline.supported ? row(t('Offline'), offlineLabel(book) || t('Download to this device · {size}', { size: fmtSize(book.tracks.reduce((n, tr) => n + tr.size, 0)) }),
         downloads.has(book.id) ? act(t('Cancel'))
-          : offline.hasBook(book) ? act(t('Remove'), true)
+          : offline.hasBook(book) || book.local ? act(t('Remove'), true) // a local book has nowhere to download from
           : act(t('Download')),
         () => {
           if (downloads.has(book.id)) downloads.get(book.id)?.ctl.abort();
-          else if (offline.hasBook(book)) removeDownload(book);
+          else if (offline.hasBook(book) || book.local) removeDownload(book);
           else startDownload(book);
           close();
         }) : null),
@@ -775,6 +776,8 @@ const cachedUrl = (id) => {
 async function getUrl(id) {
   const local = offline.has(id) && await offline.localUrl(id);
   if (local) return local;
+  // A file added from this device (ids from fromFiles in scan.js start with l) that the browser has since cleared away.
+  if (/^l/.test(id)) throw new Error(t('This book is no longer on this device. Add it again from Settings.'));
   const hit = cachedUrl(id);
   if (hit) return hit;
   const url = await api.fileUrl(id);

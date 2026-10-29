@@ -114,5 +114,14 @@ assert.deepEqual((await scan(fromFiles(lib).root, fromFiles(lib).listFiles)).map
 local = fromFiles(picked('Dune/1.mp3', 'Dune/2.mp3'));
 mine = await scan(local.root, local.listFiles);
 assert.deepEqual(mine.map((b) => [b.title, b.tracks.length]), [['Dune', 2]]);
+// Files picked on a phone come without paths: loose MP3s are one book with their cover; each M4B is its own.
+const flat = (...names) => names.map((name) => ({ name, webkitRelativePath: '', size: 5, lastModified: 0 }));
+local = fromFiles(flat('Dune - 02.mp3', 'Dune - 01.mp3', 'cover.jpg', 'Emma.m4b'));
+mine = await scan(local.root, local.listFiles);
+assert.deepEqual(mine.map((b) => [b.title, b.author, b.tracks.length]).sort(), [['Dune', '', 2], ['Emma', '', 1]]);
+assert.equal(local.files.get(mine.find((b) => b.title === 'Dune').cover.slice(8)).name, 'cover.jpg');
+// With nothing shared in their names, the book takes the first file's name.
+local = fromFiles(flat('Intro.mp3', 'Act 1.mp3'));
+assert.deepEqual((await scan(local.root, local.listFiles)).map((b) => b.tracks.length), [2]);
 
 console.log('scan.js ok');

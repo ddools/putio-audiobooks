@@ -107,6 +107,20 @@ export function fromFiles(list) {
     kids.get(parent).push({ id, name: file.name, file_type: 'FILE', size: file.size, created_at: new Date(file.lastModified || 0).toISOString(),
       ...(IMAGE_EXT.test(file.name) && { screenshot: `offline/${id}` }) });
   }
+  // Phones have no folder picker, so picked files come without paths. Loose MP3s (and friends) picked together are
+  // one book, the way a folder of them is, named for what their names share; M4Bs stay a book each.
+  const loose = kids.get('l');
+  const parts = loose.filter((f) => AUDIO_EXT.test(f.name) && !/\.m4b$/i.test(f.name));
+  if (parts.length > 1 && !loose.some((f) => f.file_type === 'FOLDER')) {
+    const names = parts.map((f) => f.name);
+    let n = 0;
+    while (names[0][n] && names.every((s) => s[n] === names[0][n])) n++;
+    const name = names[0].slice(0, n).replace(/[\s\d._-]+$/, '') || names[0].replace(AUDIO_EXT, '');
+    const id = hash('/' + name);
+    const book = loose.filter((f) => !/\.m4b$/i.test(f.name)); // the audio, and the cover and EPUB that go with it
+    kids.set(id, book);
+    kids.set('l', [...loose.filter((f) => !book.includes(f)), { id, name, file_type: 'FOLDER' }]);
+  }
   // The picked folder is the library, like put.io's, unless it holds audio itself: then it is one book.
   const top = kids.get('l').length === 1 && kids.get('l')[0].file_type === 'FOLDER' && kids.get('l')[0];
   const root = top && !kids.get(top.id).some((f) => AUDIO_EXT.test(f.name)) ? top : { id: 'l', name: '' };

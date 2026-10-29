@@ -32,9 +32,10 @@ self.addEventListener('fetch', (e) => {
   // Covers come from put.io, Apple and Open Library. Keep each one shown, so the art is still there offline.
   // ponytail: never trimmed, so old picker thumbs pile up; prune it if the cache gets big.
   if (req.method === 'GET' && req.destination === 'image' && url.origin !== self.location.origin) {
-    e.respondWith(caches.open(COVERS).then(async (cache) => (await cache.match(req.url)) ||
-      fetch(req.url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
-        .catch(() => fetch(req)) // a host without CORS still gives an image <img> can show
+    // put.io sends no CORS headers, so asking for CORS there only fails and logs an error.
+    const get = () => url.hostname.endsWith('put.io') ? fetch(req)
+      : fetch(req.url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' }).catch(() => fetch(req));
+    e.respondWith(caches.open(COVERS).then(async (cache) => (await cache.match(req.url)) || get()
         .then((res) => { if (res.ok || res.type === 'opaque') cache.put(req.url, res.clone()); return res; })));
     return;
   }

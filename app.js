@@ -864,18 +864,24 @@ function togglePlay() {
   }
 }
 
+// Moving the audio by hand counts as listening, paused or not, so it wins over an older reading spot.
+function moved() {
+  cur.moved = true;
+  savePosition(true);
+}
 function seekTo(time) {
   if (!cur) return;
-  if (!cur.loaded) { pendingSeek = Math.max(0, time); if (cur.started) loadTrack(cur.ti, pendingSeek, !audio.paused); tick(); return; }
+  if (!cur.loaded) { pendingSeek = Math.max(0, time); if (cur.started) loadTrack(cur.ti, pendingSeek, !audio.paused); tick(); return moved(); }
   const d = trackDuration();
   audio.currentTime = clamp(time, 0, d ? d - 0.25 : time);
   tick();
+  moved();
 }
 function skip(delta) {
   if (!cur) return;
   const target = now() + delta;
   const d = trackDuration();
-  if (multi() && d && target >= d && cur.ti + 1 < cur.book.tracks.length) return loadTrack(cur.ti + 1, 0, !audio.paused);
+  if (multi() && d && target >= d && cur.ti + 1 < cur.book.tracks.length) return gotoChapter(cur.ti + 1);
   seekTo(target);
 }
 function gotoChapter(i) {
@@ -883,7 +889,7 @@ function gotoChapter(i) {
   if (!cur || !list) return;
   i = clamp(i, 0, list.length - 1);
   if (multi() && i === cur.ti && cur.loaded) seekTo(0);
-  else if (multi()) loadTrack(i, 0, cur.started ? !audio.paused : false);
+  else if (multi()) { loadTrack(i, 0, cur.started ? !audio.paused : false); moved(); }
   else seekTo(list[i].start);
   if (sleep?.mode === 'chapter') sleep.index = i;
 }
@@ -941,12 +947,12 @@ let lastSave = 0;
 let lastPush = 0;
 
 function savePosition(force) {
-  if (!cur || !cur.loaded) return;
+  if (!cur || !(cur.loaded || cur.moved)) return;
   if (audio.ended && positions[cur.book.id]?.done) return; // finished stays finished
   const t = Date.now();
   if (!force && t - lastSave < 5000) return;
   lastSave = t;
-  positions[cur.book.id] = { t: cur.ti, s: Math.floor(audio.currentTime), at: t, p: +bookFraction().toFixed(4) };
+  positions[cur.book.id] = { t: cur.ti, s: Math.floor(now()), at: t, p: +bookFraction().toFixed(4) };
   const left = bookSecondsLeft();
   if (left != null) positions[cur.book.id].left = Math.round(left * settings.speed);
   savePositions();

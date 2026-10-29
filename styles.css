@@ -301,6 +301,15 @@ select {
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.28s;
 }
 body.player-open #player { transform: none; visibility: visible; transition-delay: 0s; }
+
+/* Cover morph (morph() in app.js): the tapped cover grows into the player's while the player slides up, and back down
+   into the mini player's on close. The view transition draws the slide, so the CSS one is off while it runs. */
+html.morphing #player { transition: none; }
+::view-transition-group(cover) { animation-duration: 0.34s; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+::view-transition-old(root), html.closing::view-transition-new(root) { animation: none; }
+::view-transition-new(root) { animation: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+html.closing::view-transition-old(root) { z-index: 1; animation: slide-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) reverse; }
+@keyframes slide-up { from { transform: translateY(100%); } }
 body.player-open, body.reader-open { overflow: hidden; }
 
 .p-top { display: flex; align-items: center; justify-content: space-between; margin: 0 -10px; }
@@ -442,6 +451,44 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.55); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 10px 8px 22px; }
 .sheet-head h3 { font: 600 21px/1.2 var(--sans); }
 .sheet-body { overflow-y: auto; padding: 4px 22px calc(var(--bottom) + 24px); display: grid; gap: 16px; }
+
+/* A page: a sheet that fills the screen and slides in from the right, and back out on close. */
+dialog.page {
+  position: fixed; inset: 0; z-index: 20;
+  width: 100%; height: 100%; max-width: none; max-height: none;
+  margin: 0; border-radius: 0;
+  background: var(--bg);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), display 0.28s allow-discrete, overlay 0.28s allow-discrete;
+}
+dialog.page[open] { transform: none; animation: none; }
+@starting-style { dialog.page[open] { transform: translateX(100%); } }
+dialog.page::backdrop { background: none; }
+.page-head {
+  display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
+  padding: calc(var(--top) + 8px) max(8px, calc(50% - 292px)) 8px;
+  border-bottom: 1px solid var(--line);
+}
+.page-head h3 { text-align: center; font: 600 17px/1.2 var(--sans); }
+.page .sheet-body { flex: 1; width: min(100%, 600px); margin: 0 auto; padding: 8px 16px calc(var(--bottom) + 32px); gap: 0; align-content: start; }
+.page .fine { margin-top: 28px; }
+
+.page-book { display: grid; grid-template-columns: 104px 1fr; gap: 18px; align-items: center; padding: 16px 4px 4px; }
+.page-book h2 { font: 600 21px/1.2 var(--sans); letter-spacing: -0.01em; text-wrap: balance; }
+.page-book p { color: var(--muted); margin-top: 4px; }
+.page-book + .items { margin-top: 20px; }
+.items + .items { margin-top: 16px; }
+
+.items-label { margin: 24px 16px 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.items { display: grid; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+.item { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 60px; padding: 10px 12px 10px 16px; text-align: left; cursor: pointer; }
+.item + .item { border-top: 1px solid var(--line); }
+.item:active { background: var(--raised); }
+.item > span:first-child { flex: 1; display: grid; min-width: 0; }
+.item small { color: var(--muted); font-size: 13.5px; }
+.item select { border: 0; background: none; color: var(--muted); text-align: right; padding: 0 4px; }
+.item-act { color: var(--accent-ink); font-weight: 600; padding-right: 4px; }
+.item-act.danger { color: var(--danger); }
 
 .chapters { list-style: none; margin: 0 -10px; padding: 0; }
 .chapters button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 8px 10px; border-radius: 12px; text-align: left; }

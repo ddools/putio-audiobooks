@@ -130,15 +130,17 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
 }
 
-function sheet(title, build) {
-  const dlg = h('dialog', { class: 'sheet' });
+// A page fills the screen and slides in from the side; a plain sheet rises from the bottom.
+function sheet(title, build, page) {
+  const dlg = h('dialog', { class: page ? 'sheet page' : 'sheet' });
   const close = () => dlg.close();
   dlg.append(
-    h('div', { class: 'sheet-head' }, h('h3', {}, title), iconBtn('x', t('Close'), close)),
+    page ? h('div', { class: 'page-head' }, iconBtn('left', t('Back'), close), h('h3', {}, title), h('span', { class: 'spacer' }))
+      : h('div', { class: 'sheet-head' }, h('h3', {}, title), iconBtn('x', t('Close'), close)),
     h('div', { class: 'sheet-body' }, build(close))
   );
   dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
-  dlg.addEventListener('close', () => dlg.remove());
+  dlg.addEventListener('close', () => setTimeout(() => dlg.remove(), page ? 300 : 0)); // a page slides out first
   document.body.append(dlg);
   dlg.showModal();
   return dlg;
@@ -606,28 +608,41 @@ function authorGroups(books) {
     .flatMap(([author, list]) => [h('h3', { class: 'group' }, author || t('Unknown author'), h('small', {}, ` · ${list.length}`)), bookGrid(list)]);
 }
 
+// Rows for the full-screen pages. Every row has the same shape: what it is on the left, and a chevron, a control
+// or the action's name on the right. Rows with a control are labels, so a tap anywhere on the row works the control.
+const row = (label, sub, end, onclick) => h(onclick ? 'button' : 'label', { class: 'item', type: onclick && 'button', onclick },
+  h('span', {}, h('strong', {}, label), sub ? h('small', {}, sub) : null), end);
+const chev = () => h('span', { class: 'chev', html: icon('right') });
+const act = (label, danger) => h('span', { class: danger ? 'item-act danger' : 'item-act' }, label);
+const group = (label, ...rows) => rows.some(Boolean) ? [label ? h('h4', { class: 'items-label' }, label) : null, h('div', { class: 'items' }, rows)] : [];
+
 function openBookMenu(book) {
   const p = positions[book.id];
-  sheet(book.title, (close) => [
-    h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Progress')), h('small', {}, progressLabel(book, true) || t('Not started'))),
-      h('span', { class: 'row' },
-        p?.done ? null : h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, true); close(); } }, t('Finished')),
-        p?.done || p?.p > 0.005 ? h('button', { class: 'btn', type: 'button', onclick: () => { setProgress(book, false); close(); } }, t('Start over')) : null)),
-    h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Cover art')), h('small', {}, t('Search for a different cover'))),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); openCoverPicker(book); } }, t('Choose'))),
-    h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Ebook')), h('small', {}, epubOf(book)?.name || t('Add an EPUB to read along'))),
-      h('span', { class: 'row' },
-        epubOf(book) ? h('button', { class: 'btn', type: 'button', onclick: () => { close(); openBook(book, false); openPlayer(); openReader(); } }, t('Read')) : null,
-        h('button', { class: 'btn', type: 'button', onclick: () => { close(); openEpubPicker(book); } }, epubOf(book) ? t('Change') : t('Choose')))),
-    offline.supported ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Offline')), h('small', {}, offlineLabel(book) || t('Download to this device · {size}', { size: fmtSize(book.tracks.reduce((n, tr) => n + tr.size, 0)) }))),
-      downloads.has(book.id) ? h('button', { class: 'btn', type: 'button', onclick: () => { downloads.get(book.id)?.ctl.abort(); close(); } }, t('Cancel'))
-        : offline.hasBook(book) ? h('button', { class: 'btn danger', type: 'button', onclick: () => { removeDownload(book); close(); } }, t('Remove'))
-        : h('button', { class: 'btn', type: 'button', onclick: () => { startDownload(book); close(); } }, t('Download'))) : null,
-  ]);
+  const going = !p?.done && p?.p > 0.005;
+  const epub = epubOf(book);
+  sheet('', (close) => [
+    h('div', { class: 'page-book' }, coverEl(book),
+      h('div', {}, h('h2', {}, book.title), book.author ? h('p', {}, book.author) : null)),
+    ...group(null,
+      row(t('Progress'), progressLabel(book, true) || t('Not started'), act(p?.done ? t('Start over') : t('Mark as finished')),
+        () => { setProgress(book, !p?.done); close(); }),
+      going ? row(t('Start over'), null, null, () => { setProgress(book, false); close(); }) : null),
+    ...group(null,
+      row(t('Cover art'), t('Search for a different cover'), chev(), () => { close(); openCoverPicker(book); }),
+      row(t('Ebook'), epub?.name || t('Add an EPUB to read along'), chev(), () => { close(); openEpubPicker(book); }),
+      epub ? row(t('Read'), null, null, () => { close(); openBook(book, false); openPlayer(); openReader(); }) : null),
+    ...group(null,
+      offline.supported ? row(t('Offline'), offlineLabel(book) || t('Download to this device · {size}', { size: fmtSize(book.tracks.reduce((n, tr) => n + tr.size, 0)) }),
+        downloads.has(book.id) ? act(t('Cancel'))
+          : offline.hasBook(book) ? act(t('Remove'), true)
+          : act(t('Download')),
+        () => {
+          if (downloads.has(book.id)) downloads.get(book.id)?.ctl.abort();
+          else if (offline.hasBook(book)) removeDownload(book);
+          else startDownload(book);
+          close();
+        }) : null),
+  ], true);
 }
 
 function openSort() {
@@ -642,31 +657,22 @@ function openSort() {
 
 function openSettings() {
   sheet(t('Settings'), (close) => [
-    h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Library folder')), h('small', {}, settings.root?.name || t('Not set'))),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); showFolders(); } }, t('Change'))),
-    h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Rescan')), h('small', {}, t('Pick up new books from put.io'))),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); rescan(); } }, t('Rescan'))),
-    canInstall() ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Install the app')), h('small', {}, t('Add it to your home screen'))),
-      h('button', { class: 'btn', type: 'button', onclick: () => { close(); install(); } }, t('Install'))) : null,
-    isIOS ? h('label', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Chapter buttons on lock screen')), h('small', {}, t('Instead of skip back and forward'))),
-      h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.lockChapters, onchange: (e) => { settings.lockChapters = e.target.checked; saveSettings(); setupMediaSession(); } })) : null,
-    h('label', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Language'))),
-      langPicker()),
-    whisper.ready() ? h('div', { class: 'setting' },
-      h('div', {}, h('strong', {}, t('Speech model')), h('small', {}, t('Finds the exact spot in ebooks · {size}', { size: fmtSize(whisper.DOWNLOAD) }))),
-      h('button', { class: 'btn danger', type: 'button', onclick: () => { whisper.forget(); close(); toast(t('Speech model removed.')); } }, t('Remove'))) : null,
-    h('div', { class: 'setting' },
-      DEMO
-        ? h('div', {}, h('strong', {}, t('Demo')), h('small', {}, t('Sample books. Connect put.io to play your own.')))
-        : h('div', {}, h('strong', {}, t('put.io account')), h('small', {}, t('Your place in each book stays saved in put.io'))),
-      h('button', { class: 'btn danger', type: 'button', onclick: () => { close(); signOut(); } }, DEMO ? t('Exit demo') : t('Sign out'))),
+    ...group(t('Library'),
+      row(t('Library folder'), settings.root?.name || t('Not set'), chev(), () => { close(); showFolders(); }),
+      row(t('Rescan'), t('Pick up new books from put.io'), null,() => { close(); rescan(); })),
+    ...group(t('Playback'),
+      isIOS ? row(t('Chapter buttons on lock screen'), t('Instead of skip back and forward'),
+        h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.lockChapters, onchange: (e) => { settings.lockChapters = e.target.checked; saveSettings(); setupMediaSession(); } })) : null),
+    ...group(t('General'),
+      row(t('Language'), null, langPicker()),
+      canInstall() ? row(t('Install the app'), t('Add it to your home screen'), act(t('Install')), () => { close(); install(); }) : null,
+      whisper.ready() ? row(t('Speech model'), t('Finds the exact spot in ebooks · {size}', { size: fmtSize(whisper.DOWNLOAD) }), act(t('Remove'), true),
+        () => { whisper.forget(); close(); toast(t('Speech model removed.')); }) : null),
+    ...group(t('Account'),
+      DEMO ? row(t('Demo'), t('Sample books. Connect put.io to play your own.'), act(t('Exit demo'), true), () => { close(); signOut(); })
+        : row(t('put.io account'), t('Your place in each book stays saved in put.io'), act(t('Sign out'), true), () => { close(); signOut(); })),
     h('p', { class: 'fine zipped' }, t('Version {v}', { v: VERSION })),
-  ]);
+  ], true);
 }
 
 /* ---------- playback engine ---------- */
@@ -1164,17 +1170,41 @@ function tick() {
   }
 }
 
+// The cover that was tapped, so the player can grow its own cover out of it.
+let tapped = null;
+addEventListener('click', (e) => { tapped = e.target.closest?.('.book-open, .mini-open')?.querySelector('.cover'); }, true);
+
+// Moves one cover into another while the player slides (see "cover morph" in styles.css).
+// Without view transitions, or with reduced motion, the player just slides.
+function morph(from, to, closing, update) {
+  if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return update();
+  const root = document.documentElement;
+  root.classList.add('morphing');
+  root.classList.toggle('closing', closing);
+  if (from) from.style.viewTransitionName = 'cover';
+  let target;
+  document.startViewTransition(() => {
+    if (from) from.style.viewTransitionName = '';
+    update();
+    target = to();
+    if (target) target.style.viewTransitionName = 'cover';
+  }).finished.finally(() => {
+    root.classList.remove('morphing', 'closing');
+    if (target) target.style.viewTransitionName = '';
+  });
+}
+
 function openPlayer() {
   if (!cur) return;
   const player = $('#player');
   if (document.body.classList.contains('player-open')) return;
-  player.hidden = false;
   player.inert = false;
-  requestAnimationFrame(() => document.body.classList.add('player-open'));
+  morph(tapped?.isConnected && tapped, () => ui.cover.firstChild, false, () => document.body.classList.add('player-open'));
   history.pushState({ player: true }, '');
 }
 function hidePlayer() {
-  document.body.classList.remove('player-open');
+  if (!document.body.classList.contains('player-open')) return;
+  morph(ui.cover.firstChild, () => ui.miniCover.firstChild, true, () => document.body.classList.remove('player-open'));
   $('#player').inert = true;
 }
 function closePlayer() {
@@ -1823,7 +1853,8 @@ function boot() {
   buildReader();
   setupMediaSession();
   offline.init().then(renderLibrary, () => {});
-  $('#player').inert = true;
+  // Laid out off screen from the start, so it can slide in on the first open too.
+  Object.assign($('#player'), { inert: true, hidden: false });
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

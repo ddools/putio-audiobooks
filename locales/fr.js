@@ -210,4 +210,5 @@ export default {
   'Added {n} books from this device.': '{n} livres ajoutés depuis cet appareil.',
   'This book is no longer on this device. Add it again from Settings.': 'Ce livre n’est plus sur cet appareil. Ajoutez-le à nouveau depuis les réglages.',
   'No longer on this device': 'N’est plus sur cet appareil',
+  'Read along': 'Lecture synchronisée',
 };

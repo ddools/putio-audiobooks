@@ -209,4 +209,5 @@ export default {
   'Added {n} books from this device.': '{n} boeken toegevoegd vanaf dit apparaat.',
   'This book is no longer on this device. Add it again from Settings.': 'Dit boek staat niet meer op dit apparaat. Voeg het opnieuw toe via Instellingen.',
   'No longer on this device': 'Niet meer op dit apparaat',
+  'Read along': 'Meelezen',
 };

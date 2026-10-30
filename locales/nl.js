@@ -210,4 +210,12 @@ export default {
   'This book is no longer on this device. Add it again from Settings.': 'Dit boek staat niet meer op dit apparaat. Voeg het opnieuw toe via Instellingen.',
   'No longer on this device': 'Niet meer op dit apparaat',
   'Read along': 'Meelezen',
+  'Skip back': 'Terugspoelen',
+  'Skip forward': 'Vooruitspoelen',
+  '{n} seconds': '{n} seconden',
+  'Bookmarks': 'Bladwijzers',
+  'Add a note': 'Voeg een notitie toe',
+  'Note': 'Notitie',
+  'Delete bookmark': 'Bladwijzer verwijderen',
+  'Bookmark this spot': 'Bladwijzer hier',
 };

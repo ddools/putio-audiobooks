@@ -45,7 +45,8 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): fo
 **Player**
 
 - Chapter list, a scrubber scoped to the current chapter, previous and next chapter.
-- Skip back 15 seconds or forward 30.
+- Skip back 15 seconds or forward 30. Settings → Playback changes both, from 5 to 90 seconds.
+- Bookmarks: the bookmark button at the top of the player saves the spot, with an optional note. Tap one to go back there.
 - Speed from 0.5x to 3.5x in 0.05 steps, remembered.
 - Sleep timer: 5 to 60 minutes, or the end of the chapter.
 - Lock screen and headphone controls.
@@ -63,7 +64,7 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): fo
 
 **Sync and offline**
 
-- Remembers your place in every book. Positions, stars and hidden books sync between devices through put.io's own per-app config storage.
+- Remembers your place in every book. Positions, bookmarks, stars and hidden books sync between devices through put.io's own per-app config storage.
 - Download a book to listen without a connection. Downloads are kept in the browser's storage on that device, and only run while the app is open.
 - The app itself opens offline. Audio streams unless the book is downloaded.
 - Books already on your device: Settings → **Add from this device** and pick a folder. The same rules as put.io turn it into books. The files are copied into the app's storage, so they play offline, and they stay in the library through rescans. Removing one deletes the copy, not your original.
@@ -85,16 +86,17 @@ No put.io account? [Try the demo](https://putio-audiobooks.vercel.app/?demo): fo
 
 - **Formats:** MP3, M4B, M4A, AAC, OGG, Opus, FLAC, WAV.
 - **Depth:** folders are scanned six levels below the library folder.
-- **M4B tags:** read with small range requests, in the background after a scan.
-- **Missing covers:** the app searches Apple's audiobooks and Open Library once for that book, after a scan, and takes the first match. If nothing turns up, the book gets a generated cover. "Cover art" in a book's menu runs the same search so you can pick one yourself.
+- **Tags:** read from each book's first file with small range requests, in the background after a scan. An M4B's tags name the book. An MP3's ID3 tags only fill in a missing author: titles still come from folder names, which are usually tidier than album tags.
+- **Embedded covers:** when put.io has no image for a book, the cover inside its first M4B or MP3 is used, and kept on the device.
+- **Still no cover:** the app searches Apple's audiobooks and Open Library once for that book, after a scan, and takes the first match. If nothing turns up, the book gets a generated cover. "Cover art" in a book's menu runs the same search so you can pick one yourself.
 
-Not in this version: embedded cover art from inside M4B files, and ID3 tags from MP3s (titles come from file and folder names).
+Not in this version: chapter titles from each MP3's own tags (they come from file names).
 
 ## Privacy
 
 - The app talks to put.io straight from your browser. There is no server in between.
 - Connecting gives the app a token for your whole put.io account, not just one folder. The app only lists files, reads audio and stores its own settings.
-- Your token, listening and reading positions, stars and hidden books stay on your device and in your put.io account. Downloaded books and opened EPUBs stay in the browser's storage on the device.
+- Your token, listening and reading positions, bookmarks, stars and hidden books stay on your device and in your put.io account. Downloaded books and opened EPUBs stay in the browser's storage on the device.
 - "Find the exact spot" downloads a speech model from Hugging Face once, after asking. Speech recognition runs on the device: the audio never leaves it.
 - The one exception is cover art: the title of each book without a cover is sent to Apple and Open Library once, after a scan, and so is whatever you search for in the cover picker.
 - The hosted copy counts page views with Vercel Web Analytics: no cookies, and nothing about your library or put.io account.

@@ -192,8 +192,11 @@ async function quicktimeChapters(r, traks) {
   return out;
 }
 
-// iTunes-style tags: moov/udta/meta/ilst. Only the short text ones.
-async function tags(r, udta) {
+// JPEG unless the bytes say PNG; the stated types are often wrong or missing.
+const picture = (data) => ({ type: data[0] === 0x89 ? 'image/png' : 'image/jpeg', data });
+
+// iTunes-style tags: moov/udta/meta/ilst. The short text ones, and the cover when asked for.
+async function tags(r, udta, wantCover) {
   const out = {};
   if (!udta) return out;
   const meta = (await kids(r, udta.body, udta.end)).find((a) => a.type === 'meta');
@@ -204,6 +207,11 @@ async function tags(r, udta) {
   if (!ilst) return out;
   const want = { '©nam': 'title', '©ART': 'artist', aART: 'albumArtist', '©alb': 'album' };
   for (const item of await kids(r, ilst.body, ilst.end)) {
+    if (item.type === 'covr' && wantCover && item.end - item.body < 8 << 20) {
+      const data = (await kids(r, item.body, item.end)).find((a) => a.type === 'data');
+      if (data) out.cover = picture((await body(r, data, 8 << 20)).subarray(8));
+      continue;
+    }
     const key = want[item.type];
     if (!key || item.end - item.body > 2048) continue;
     const data = (await kids(r, item.body, item.end)).find((a) => a.type === 'data');
@@ -214,7 +222,7 @@ async function tags(r, udta) {
   return out;
 }
 
-export async function parseM4b(r) {
+export async function parseM4b(r, wantCover) {
   const top = await kids(r, 0, r.size);
   const moov = top.find((a) => a.type === 'moov');
   if (!moov) return { duration: 0, chapters: [], tags: {} };
@@ -248,8 +256,48 @@ export async function parseM4b(r) {
   });
 
   let meta = {};
-  try { meta = await tags(r, udta); } catch {}
+  try { meta = await tags(r, udta, wantCover); } catch {}
   return { duration, chapters, tags: meta };
+}
+
+/* ---------- MP3 tags ---------- */
+
+const ID3 = { TIT2: 'title', TT2: 'title', TPE1: 'artist', TP1: 'artist', TPE2: 'albumArtist', TP2: 'albumArtist', TALB: 'album', TAL: 'album', APIC: 'cover', PIC: 'cover' };
+const syncsafe = (b, o) => ((b[o] & 127) << 21) | ((b[o + 1] & 127) << 14) | ((b[o + 2] & 127) << 7) | (b[o + 3] & 127);
+const id3Text = (b) => (b[0] === 1 ? decodeText(b.subarray(1)) : new TextDecoder(['latin1', '', 'utf-16be', 'utf-8'][b[0]] || 'latin1').decode(b.subarray(1)))
+  .split('\0')[0].trim();
+// APIC (v2.3, v2.4): encoding, MIME type, picture type, description, then the image. PIC (v2.2) has a 3-letter format for the type.
+function id3Picture(b, v) {
+  let i = v === 2 ? 5 : b.indexOf(0, 1) + 2;
+  const wide = b[0] === 1 || b[0] === 2;
+  while (i < b.length && (b[i] || (wide && b[i + 1]))) i += wide ? 2 : 1;
+  return picture(b.subarray(i + (wide ? 2 : 1)));
+}
+
+// ID3v2 tags at the start of an MP3, the same shape as parseM4b's. Frames are walked one header at a time,
+// so a cover that isn't wanted is never downloaded.
+// ponytail: unsynchronised tags (old writers, rare) are skipped whole; undo the 0xFF00 escaping if they turn up.
+export async function parseId3(r, wantCover) {
+  const out = {};
+  const head = await r.read(0, 10);
+  if (head.length < 10 || ascii(head, 0, 3) !== 'ID3' || head[5] & 0x80) return { tags: out };
+  const v = head[3];
+  const end = Math.min(r.size, 10 + syncsafe(head, 6));
+  const fh = v === 2 ? 6 : 10;
+  let o = 10;
+  if (head[5] & 0x40 && v > 2) { const x = await r.read(o, 4); o += v === 4 ? syncsafe(x, 0) : 4 + view(x).getUint32(0); }
+  while (o + fh <= end) {
+    const f = await r.read(o, fh);
+    if (!f[0]) break; // padding
+    const size = v === 2 ? (f[3] << 16) | (f[4] << 8) | f[5] : v === 4 ? syncsafe(f, 4) : view(f).getUint32(4);
+    const key = ID3[ascii(f, 0, v === 2 ? 3 : 4)];
+    if (key && !out[key] && (key === 'cover' ? wantCover && size < 8 << 20 : size < 2048)) {
+      const b = await r.read(o + fh, size);
+      out[key] = key === 'cover' ? id3Picture(b, v) : id3Text(b);
+    }
+    o += fh + size;
+  }
+  return { tags: out };
 }
 
 /* ---------- a stretch of audio, for speech recognition ---------- */

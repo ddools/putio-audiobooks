@@ -1,7 +1,7 @@
 import * as api from './api.js';
 import { audioClip, blobReader } from './clip.js';
 import { parseEpub } from './epub.js';
-import { httpReader, parseM4b } from './m4b.js';
+import { httpReader, parseId3, parseM4b } from './m4b.js';
 import { CLIENT_ID as BAKED_ID, DEMO, VERSION } from './config.js';
 import { coverTerm, searchCovers } from './covers.js';
 import { LANGS, lang, num, setLang, t, translate } from './i18n.js';
@@ -87,6 +87,7 @@ const ICONS = {
   book: '<path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5z"/><path d="M12 6.5v13"/>',
   target: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
   file: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/>',
+  bookmark: '<path d="M7 3.5h10a1 1 0 0 1 1 1V20.5l-6-4-6 4V4.5a1 1 0 0 1 1-1z"/>',
   eyeOff: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/>',
 };
 const icon = (name) =>
@@ -194,7 +195,15 @@ function toggleMark(kind, id) {
 const reading = store.get('reading', {});
 const epubLinks = store.get('epubLinks', {});
 const anchors = store.get('anchors', {});
-for (const v of [...Object.values(positions), ...Object.values(reading), ...Object.values(epubLinks)]) see(v?.at);
+// Bookmarks by book: { at, list: [{ id (file id), t (file index), s (seconds), note }] }. The whole list syncs as one entry.
+const bookmarks = store.get('bookmarks', {});
+const pushBookmarks = (id) => api.setConfig('bm_' + id, bookmarks[id]).catch(() => {});
+function saveBookmarks(id) {
+  bookmarks[id].at = stamp();
+  store.set('bookmarks', bookmarks);
+  pushBookmarks(id);
+}
+for (const v of [...Object.values(positions), ...Object.values(reading), ...Object.values(epubLinks), ...Object.values(bookmarks)]) see(v?.at);
 for (const at of Object.values(markAt)) see(at);
 const pushReading = (id) => api.setConfig('read_' + id, reading[id]).catch(() => {});
 const pushLink = (id) => api.setConfig('epub_' + id, epubLinks[id]).catch(() => {});
@@ -375,6 +384,10 @@ async function rescan() {
       if (prev?.chapters && prev.tracks.length === 1 && prev.tracks[0].id === book.tracks[0].id) {
         Object.assign(book, { chapters: prev.chapters, duration: prev.duration, title: prev.title, author: prev.author });
       }
+      if (prev?.tagged && prev.tracks[0].id === book.tracks[0].id) {
+        Object.assign(book, { tagged: true, author: book.author || prev.author, ...(prev.embedded && { embedded: prev.embedded }) });
+        if (!book.cover && book.embedded) book.cover = book.embedded;
+      }
       if (prev?.art || prev?.art === null) Object.assign(book, { art: prev.art, cover: prev.art });
       if (prev?.sought) book.sought = true;
     }
@@ -384,7 +397,7 @@ async function rescan() {
     library = found;
     saveLibrary();
     // An empty scan is more likely a glitch than a cleared-out library; don't delete downloads over it.
-    if (fromPutio) offline.keepOnly(new Set(found.flatMap((b) => [...b.tracks.map((t) => String(t.id)), epubOf(b)?.id, b.local && localCover(b)].filter(Boolean).map(String)))).catch(() => {});
+    if (fromPutio) offline.keepOnly(new Set(found.flatMap((b) => [...b.tracks.map((t) => String(t.id)), epubOf(b)?.id, b.local && localCover(b), b.embedded?.slice(8)].filter(Boolean).map(String)))).catch(() => {});
     if (cur) {
       const same = library.find((b) => b.id === cur.book.id);
       if (same) cur.book = same;
@@ -442,7 +455,7 @@ async function seekArt() {
   if (seeking) return;
   seeking = true;
   let book;
-  while (api.hasToken() && navigator.onLine && (book = library.find(wantsTags))) await loadChapters(book);
+  while (api.hasToken() && navigator.onLine && (book = library.find(wantsTags))) await loadTags(book);
   while (api.hasToken() && (book = library.find((b) => !b.cover && !b.sought && b.art === undefined))) {
     const { id } = book;
     const term = coverTerm(book);
@@ -463,7 +476,7 @@ async function seekArt() {
 // book.art is a cover picked by hand: a URL, or null for "no cover". Unset means put.io's own image.
 function setArt(book, art) {
   book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
-  if (art === undefined) { delete book.art; book.cover = null; rescan(); } // the scan puts put.io's image back
+  if (art === undefined) { delete book.art; book.cover = book.embedded || null; rescan(); } // the scan puts put.io's image back
   else Object.assign(book, { art, cover: art });
   saveLibrary();
   renderLibrary();
@@ -548,7 +561,7 @@ async function startDownload(book) {
   const job = { p: 0, ctl: new AbortController() };
   downloads.set(book.id, job);
   renderLibrary();
-  loadChapters(book); // read them while put.io is in reach
+  loadTags(book); // read them while put.io is in reach
   if (epubOf(book)) epubBlob(epubOf(book)).catch(() => {});
   try {
     await offline.download(book, getUrl, (p) => { if (p - job.p >= 0.02) { job.p = p; refreshCard(library.find((b) => b.id === book.id) || book); } }, job.ctl.signal);
@@ -564,7 +577,7 @@ async function startDownload(book) {
 async function removeDownload(book) {
   if (cur?.book.id === book.id) stopPlayback();
   // A local book leaves the library too: there is nothing to download it from again.
-  const own = book.local ? [book.epub?.id, localCover(book)].filter(Boolean).map((id) => ({ id })) : [];
+  const own = book.local ? [book.epub?.id, localCover(book), book.embedded?.slice(8)].filter(Boolean).map((id) => ({ id })) : [];
   await offline.remove({ tracks: [...book.tracks, ...own] }).catch(() => {});
   if (book.local) {
     library = library.filter((b) => b.id !== book.id);
@@ -727,6 +740,9 @@ function openSort() {
   ]);
 }
 
+const skipPicker = (dir) => h('select', { 'aria-label': dir === 'back' ? t('Skip back') : t('Skip forward'), onchange: (e) => setSkip(dir, +e.target.value) },
+  [5, 10, 15, 30, 45, 60, 90].map((n) => h('option', { value: n, selected: n === settings[dir] }, t('{n} seconds', { n }))));
+
 function openSettings() {
   sheet(t('Settings'), (close) => [
     ...group(t('Library'),
@@ -734,6 +750,8 @@ function openSettings() {
       row(t('Rescan'), t('Pick up new books from put.io'), null,() => { close(); rescan(); }),
       offline.supported && !DEMO ? row(t('Add from this device'), t('Copy a folder of audiobooks into the app'), chev(), () => { close(); addLocal(); }) : null),
     ...group(t('Playback'),
+      row(t('Skip back'), null, skipPicker('back')),
+      row(t('Skip forward'), null, skipPicker('fwd')),
       isIOS ? row(t('Chapter buttons on lock screen'), t('Instead of skip back and forward'),
         h('input', { class: 'switch', type: 'checkbox', role: 'switch', checked: settings.lockChapters, onchange: (e) => { settings.lockChapters = e.target.checked; saveSettings(); setupMediaSession(); } })) : null),
     ...group(t('General'),
@@ -863,13 +881,16 @@ function seekFraction(frac, autoplay) {
   pendingFrac = within;
 }
 
+// The file a saved spot ({ id, t }) is in. By the file's id when saved with one, so a file added to the book later doesn't shift the place.
+function trackOf(book, spot) {
+  const byId = book.tracks.findIndex((tr) => tr.id === spot.id);
+  return byId >= 0 ? byId : clamp(spot.t || 0, 0, book.tracks.length - 1);
+}
 function startPos(book) {
   const p = positions[book.id];
   if (!p || p.done) return { t: 0, s: 0 };
   const rewind = Date.now() - p.at > 5 * 60 * 1000 ? 10 : 0;
-  // By the file's id when saved with one, so a file added to the book later doesn't shift the place.
-  const byId = book.tracks.findIndex((tr) => tr.id === p.id);
-  return { t: byId >= 0 ? byId : clamp(p.t || 0, 0, book.tracks.length - 1), s: Math.max(0, (p.s || 0) - rewind) };
+  return { t: trackOf(book, p), s: Math.max(0, (p.s || 0) - rewind) };
 }
 
 async function loadTrack(ti, time = 0, autoplay = false) {
@@ -910,7 +931,7 @@ function openBook(book, autoplay) {
   pendingSeek = pos.s;
   shownChapter = -1;
   store.set('last', book.id);
-  loadChapters(book);
+  loadTags(book);
   if (autoplay) {
     loadTrack(pos.t, pos.s, true);
     openPlayer();
@@ -1001,26 +1022,40 @@ function setSleep(next) {
   tick();
 }
 
-/* ---------- M4B chapters ---------- */
+/* ---------- tags: M4B chapters, and covers and authors from the first file ---------- */
 
-const wantsTags = (book) => book.tracks.length === 1 && /\.(m4b|m4a)$/i.test(book.tracks[0].name) && !book.chapters && !book._tried;
-async function loadChapters(book) {
+// book.tagged marks a book whose first file has been read. A lone M4B's tags name the book; an MP3's only fill
+// in a missing author, because album tags like "Selected Poems (Gordon)" are often worse than the folder name.
+// An embedded cover is kept in the downloads cache and shown when put.io has no image of its own.
+const wantsTags = (book) => /\.(m4b|m4a|mp3)$/i.test(book.tracks[0].name) && !book.tagged && !book._tried;
+async function loadTags(book) {
   const file = book.tracks[0];
   if (!wantsTags(book)) return;
   book._tried = true;
   try {
-    const info = await parseM4b(httpReader(await getUrl(file.id), file.size));
+    const one = book.tracks.length === 1 && /\.(m4b|m4a)$/i.test(file.name);
+    const r = httpReader(await getUrl(file.id), file.size);
+    const wantCover = offline.supported && !book.cover && book.art === undefined;
+    const info = await (/\.mp3$/i.test(file.name) ? parseId3 : parseM4b)(r, wantCover);
     book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
-    book.chapters = info.chapters;
-    book.duration = info.duration;
-    if (info.tags.album || info.tags.title) book.title = info.tags.album || info.tags.title;
-    if (info.tags.artist || info.tags.albumArtist) book.author = info.tags.artist || info.tags.albumArtist;
+    if (one) {
+      book.chapters = info.chapters;
+      book.duration = info.duration;
+      if (info.tags.album || info.tags.title) book.title = info.tags.album || info.tags.title;
+    }
+    if (one || !book.author) book.author = info.tags.artist || info.tags.albumArtist || book.author;
+    if (info.tags.cover) {
+      await offline.save('c' + book.id, info.tags.cover.data, info.tags.cover.type);
+      book.embedded = 'offline/c' + book.id;
+      if (!book.cover && book.art === undefined) book.cover = book.embedded;
+    }
+    book.tagged = true;
     saveLibrary();
     renderLibrary();
-    if (cur?.book.id === book.id) { shownChapter = -1; refreshPlayer(); }
+    if (cur?.book.id === book.id) { shownChapter = -1; refreshPlayer(); updateMediaSession(); }
     if (rd.open && ebook && cur?.book.id === book.id) rd.map = textMap(cur.book); // the chapters line the text up better
   } catch (err) {
-    console.warn('Could not read chapters for', book.title, err);
+    console.warn('Could not read tags for', book.title, err);
   }
 }
 
@@ -1059,8 +1094,9 @@ const synced = () => Object.fromEntries([
   ...Object.entries(markAt).map(([id, at]) => ['mark_' + id, { at }]),
   ...Object.entries(reading).map(([id, v]) => ['read_' + id, v]),
   ...Object.entries(epubLinks).map(([id, v]) => ['epub_' + id, v]),
+  ...Object.entries(bookmarks).map(([id, v]) => ['bm_' + id, v]),
 ]);
-const SYNC_KEY = /^(pos|mark|read|epub)_(.+)$/;
+const SYNC_KEY = /^(pos|mark|read|epub|bm)_(.+)$/;
 async function pullPositions() {
   if (!api.hasToken()) return;
   let remote;
@@ -1084,6 +1120,11 @@ async function pullPositions() {
       read = true;
       continue;
     }
+    if (kind === 'bm') {
+      bookmarks[id] = value;
+      store.set('bookmarks', bookmarks);
+      continue;
+    }
     if (kind !== 'pos') continue;
     if (cur?.book.id === id && !audio.paused) continue;
     positions[id] = value;
@@ -1101,7 +1142,7 @@ async function pullPositions() {
     marked = true;
   }
   // Whatever put.io lacks or holds an older copy of goes up now: sends that failed offline are not retried elsewhere.
-  const push = { pos: pushPosition, mark: pushMark, read: pushReading, epub: pushLink };
+  const push = { pos: pushPosition, mark: pushMark, read: pushReading, epub: pushLink, bm: pushBookmarks };
   for (const key of compare(synced(), remote).send) {
     const [, kind, id] = SYNC_KEY.exec(key);
     push[kind](id);
@@ -1118,6 +1159,12 @@ const ui = {};
 const skipBtn = (dir, secs, onclick) =>
   h('button', { class: 'skip', type: 'button', 'aria-label': dir === 'back' ? t('Back {n} seconds', { n: secs }) : t('Forward {n} seconds', { n: secs }), onclick },
     h('span', { html: icon(dir) }), h('b', {}, String(secs)));
+// The lock screen and keyboard read settings.back and settings.fwd as they go; only the player's buttons show the number.
+function setSkip(dir, secs) {
+  settings[dir] = secs;
+  saveSettings();
+  ui[dir].replaceWith(ui[dir] = skipBtn(dir, secs, () => skip(dir === 'back' ? -settings.back : settings.fwd)));
+}
 
 function buildPlayer() {
   const player = $('#player');
@@ -1132,7 +1179,7 @@ function buildPlayer() {
     h('header', { class: 'p-top' },
       iconBtn('down', t('Close player'), closePlayer),
       ui.bookText = h('span', { class: 'p-left' }),
-      iconBtn('chapters', t('Chapters'), openChapters)),
+      h('span', { class: 'row' }, iconBtn('bookmark', t('Bookmarks'), openBookmarks), iconBtn('chapters', t('Chapters'), openChapters))),
     ui.cover = h('div', { class: 'p-cover' }),
     h('div', { class: 'p-meta' }, ui.title = h('h2'), ui.author = h('p'),
       ui.readHint = h('button', { class: 'read-hint', type: 'button', hidden: true, onclick: () => listenFromText(reading[cur.book.id].c) }, t('Listen from where you read'))),
@@ -1140,9 +1187,9 @@ function buildPlayer() {
     h('div', { class: 'p-scrub' }, ui.range, h('div', { class: 'p-times' }, ui.elapsed = h('span'), ui.remain = h('span'))),
     h('div', { class: 'p-controls' },
       iconBtn('prev', t('Previous chapter'), prevChapter),
-      skipBtn('back', settings.back, () => skip(-settings.back)),
+      ui.back = skipBtn('back', settings.back, () => skip(-settings.back)),
       ui.play = h('button', { class: 'play', type: 'button', 'aria-label': t('Play'), onclick: togglePlay }),
-      skipBtn('fwd', settings.fwd, () => skip(settings.fwd)),
+      ui.fwd = skipBtn('fwd', settings.fwd, () => skip(settings.fwd)),
       iconBtn('next', t('Next chapter'), nextChapter)),
     h('div', { class: 'p-tools' },
       ui.speed = h('button', { class: 'tool', type: 'button', onclick: openSpeed }, ui.speedValue = h('b'), h('small', {}, t('Speed'))),
@@ -1309,6 +1356,48 @@ function openChapters() {
         h('span', { class: 'name' }, c.title),
         c.start != null ? h('span', { class: 'at' }, fmt(c.start)) : null)))));
   $('.current', dlg)?.scrollIntoView({ block: 'center' });
+}
+
+function jumpTo(spot) {
+  const ti = trackOf(cur.book, spot);
+  if (ti === cur.ti) seekTo(spot.s);
+  else { loadTrack(ti, spot.s, cur.started ? !audio.paused : false); moved(); }
+  if (sleep?.mode === 'chapter') sleep.index = chapterIndex();
+}
+
+function openBookmarks() {
+  if (!cur) return;
+  const { book } = cur;
+  let dirty = false;
+  const ol = h('ol', { class: 'chapters bookmarks' });
+  const paint = (fresh) => {
+    const list = bookmarks[book.id]?.list || [];
+    const chapters = chapterList();
+    ol.replaceChildren(...list.map((spot, i) => {
+      const chapter = !chapters ? '' : multi() ? chapters[trackOf(book, spot)]?.title : chapters.findLast((c) => c.start <= spot.s + 0.25)?.title;
+      const note = h('input', { type: 'text', value: spot.note || '', placeholder: t('Add a note'), 'aria-label': t('Note'), oninput: (e) => { spot.note = e.target.value; dirty = true; } });
+      if (spot === fresh) setTimeout(() => note.focus());
+      return h('li', {},
+        h('button', { type: 'button', onclick: () => { jumpTo(spot); dlg.close(); } },
+          h('span', { class: 'num', html: icon('bookmark') }),
+          h('span', { class: 'name' }, chapter || book.title),
+          h('span', { class: 'at' }, fmt(spot.s))),
+        iconBtn('x', t('Delete bookmark'), () => { list.splice(i, 1); saveBookmarks(book.id); paint(); }),
+        note);
+    }));
+  };
+  const add = () => {
+    const spot = { id: book.tracks[cur.ti].id, t: cur.ti, s: +now().toFixed(1), note: '' };
+    const list = (bookmarks[book.id] ||= { list: [] }).list;
+    list.push(spot);
+    list.sort((a, b) => a.t - b.t || a.s - b.s);
+    saveBookmarks(book.id);
+    paint(spot);
+  };
+  const dlg = sheet(t('Bookmarks'), () => [h('button', { class: 'btn primary', type: 'button', onclick: add }, t('Bookmark this spot')), ol]);
+  // Notes save when the sheet closes, so typing one doesn't send every keystroke to put.io.
+  dlg.addEventListener('close', () => { if (dirty) saveBookmarks(book.id); });
+  paint();
 }
 
 function openSpeed() {

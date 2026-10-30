@@ -210,4 +210,12 @@ export default {
   'This book is no longer on this device. Add it again from Settings.': 'Este libro ya no está en este dispositivo. Vuelve a añadirlo desde Ajustes.',
   'No longer on this device': 'Ya no está en este dispositivo',
   'Read along': 'Leer a la vez',
+  'Skip back': 'Retroceder',
+  'Skip forward': 'Avanzar',
+  '{n} seconds': '{n} segundos',
+  'Bookmarks': 'Marcadores',
+  'Add a note': 'Añade una nota',
+  'Note': 'Nota',
+  'Delete bookmark': 'Eliminar marcador',
+  'Bookmark this spot': 'Marcar este punto',
 };

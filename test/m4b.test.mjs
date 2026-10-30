@@ -1,6 +1,6 @@
 // Run with: node test/m4b.test.mjs
 import assert from 'node:assert/strict';
-import { parseM4b } from '../m4b.js';
+import { parseId3, parseM4b } from '../m4b.js';
 
 const bytes = (...parts) => Uint8Array.from(parts.map((p) => [...(typeof p === 'number' ? [p] : p)]).flat(Infinity));
 const u32 = (n) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
@@ -49,5 +49,32 @@ assert.deepEqual(b.chapters.map((c) => [c.title, c.start]), [['Intro', 0], ['Mid
 
 // C: no moov
 assert.deepEqual(await parseM4b(reader(bytes(ftyp, mdat))), { duration: 0, chapters: [], tags: {} });
+
+// D: an M4B cover, only when asked for
+const png = [0x89, 0x50, 0x4e, 0x47];
+const covr = atom('covr', atom('data', u32(14), u32(0), png));
+const withCover = bytes(ftyp, atom('moov', mvhd, atom('udta', atom('meta', u32(0), atom('ilst', item('©alb', 'Pictured'), covr)))));
+const d = await parseM4b(reader(withCover), true);
+assert.equal(d.tags.album, 'Pictured');
+assert.deepEqual([d.tags.cover.type, [...d.tags.cover.data]], ['image/png', png]);
+assert.equal((await parseM4b(reader(withCover))).tags.cover, undefined);
+
+// E: ID3 tags in an MP3: v2.3 with Latin-1, UTF-16 and a picture, and v2.2's three-letter frames
+const syncsafe = (n) => [(n >> 21) & 127, (n >> 14) & 127, (n >> 7) & 127, n & 127];
+const id3 = (v, frames) => bytes(text('ID3'), v, 0, 0, syncsafe(frames.length + 4), frames, 0, 0, 0, 0, [0xff, 0xfb]);
+const frame3 = (id, ...parts) => { const b = bytes(...parts); return bytes(text(id), u32(b.length), 0, 0, b); };
+const utf16 = (s) => [0xff, 0xfe, ...[...s].flatMap((c) => [c.charCodeAt(0), 0])];
+const jpeg = [0xff, 0xd8, 0xff, 0xe0];
+const v3 = id3(3, bytes(
+  frame3('TALB', 0, text('Dune')),
+  frame3('TPE1', 1, utf16('Frank Herbert'), 0, 0),
+  frame3('APIC', 1, text('image/jpeg'), 0, 3, utf16('Front'), 0, 0, jpeg)));
+const e = await parseId3(reader(v3), true);
+assert.deepEqual([e.tags.album, e.tags.artist, e.tags.cover.type, [...e.tags.cover.data]], ['Dune', 'Frank Herbert', 'image/jpeg', jpeg]);
+assert.equal((await parseId3(reader(v3))).tags.cover, undefined);
+const frame2 = (id, ...parts) => { const b = bytes(...parts); return bytes(text(id), 0, b.length >> 8, b.length & 255, b); };
+const v2 = await parseId3(reader(id3(2, bytes(frame2('TAL', 3, text('Emma')), frame2('TP1', 0, text('Jane Austen'))))));
+assert.deepEqual([v2.tags.album, v2.tags.artist], ['Emma', 'Jane Austen']);
+assert.deepEqual(await parseId3(reader(bytes([0xff, 0xfb, 0x90, 0x00]))), { tags: {} });
 
 console.log('m4b.js ok');

@@ -7,7 +7,7 @@ import { coverTerm, searchCovers } from './covers.js';
 import { LANGS, lang, num, setLang, t, translate } from './i18n.js';
 import { ROOT as DEMO_ROOT } from './demo.js';
 import * as offline from './offline.js';
-import { byName, collator, fromFiles, scan, trackTitles } from './scan.js';
+import { autoParts, byName, collator, fromFiles, scan, trackTitles } from './scan.js';
 import { compare, see, stamp } from './merge.js';
 import { learn, locate, makeMap, matchChapters, timedWords, wordAt, wordIndex } from './sync.js';
 import * as whisper from './whisper.js';
@@ -811,7 +811,11 @@ const trackDuration = () => (cur?.loaded && Number.isFinite(audio.duration) ? au
 function chapterList() {
   const book = cur.book;
   if (multi()) return (cur.list?.book === book ? cur.list : cur.list = { book, items: trackTitles(book.tracks.map((t) => t.name)).map((title, track) => ({ title, track })) }).items;
-  return book.chapters?.length > 1 ? book.chapters : null;
+  if (book.chapters?.length > 1) return book.chapters;
+  // Derived, not saved, so real chapters arriving later take over; rebuilt only when the duration changes.
+  const d = trackDuration();
+  if (cur.parts?.book !== book || cur.parts.d !== d) { cur.parts = { book, d, items: autoParts(d, (n) => t('Part {n}', { n })) }; shownChapter = -1; }
+  return cur.parts.items;
 }
 function chapterIndex() {
   if (multi()) return cur.ti;

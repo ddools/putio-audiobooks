@@ -128,6 +128,7 @@ export default {
   'Speed': 'Snelheid',
   'Open player': 'Speler openen',
   'No chapters': 'Geen hoofdstukken',
+  'Part {n}': 'Deel {n}',
   '{n} of {total}': '{n} van {total}',
   'About {time} left': 'Nog ongeveer {time}',
   'Pause': 'Pauzeren',

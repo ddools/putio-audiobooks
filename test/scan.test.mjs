@@ -1,6 +1,6 @@
 // Run with: node test/scan.test.mjs
 import assert from 'node:assert/strict';
-import { fromFiles, scan, trackTitle, trackTitles } from '../scan.js';
+import { autoParts, fromFiles, scan, trackTitle, trackTitles } from '../scan.js';
 
 // A fake put.io: folder id -> its files. Listings answer a tick later, so overlap can be counted.
 let nextId = 1;
@@ -123,5 +123,9 @@ assert.equal(local.files.get(mine.find((b) => b.title === 'Dune').cover.slice(8)
 // With nothing shared in their names, the book takes the first file's name.
 local = fromFiles(flat('Intro.mp3', 'Act 1.mp3'));
 assert.deepEqual((await scan(local.root, local.listFiles)).map((b) => b.tracks.length), [2]);
+
+// Long chapterless files split into 30-minute parts; an hour or less stays whole.
+assert.equal(autoParts(3600, String), null);
+assert.deepEqual(autoParts(4000, (n) => 'Part ' + n).map((p) => [p.title, p.start, p.end]), [['Part 1', 0, 1800], ['Part 2', 1800, 3600], ['Part 3', 3600, 4000]]);
 
 console.log('scan.js ok');

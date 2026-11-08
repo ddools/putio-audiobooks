@@ -292,8 +292,9 @@ export async function parseId3(r, wantCover) {
     if (!f[0]) break; // padding
     const size = v === 2 ? (f[3] << 16) | (f[4] << 8) | f[5] : v === 4 ? syncsafe(f, 4) : view(f).getUint32(4);
     const name = ascii(f, 0, v === 2 ? 3 : 4);
-    if (v > 2 && (name === 'CHAP' || name === 'CTOC') && size > 8 && size < 1 << 16) {
-      const b = await r.read(o + fh, size), z = b.indexOf(0);
+    if (v > 2 && (name === 'CHAP' || name === 'CTOC') && size > 8) {
+      // Only the head of a CHAP: its title comes before any chapter picture, which would cost range reads.
+      const b = await r.read(o + fh, Math.min(size, name === 'CHAP' ? 4096 : 1 << 16)), z = b.indexOf(0);
       if (name === 'CHAP') {
         const times = view(b.subarray(z + 1, z + 9));
         // sub-frames (TIT2 is the title) follow the four u32s; ponytail: only TIT2, no flags or unsync handling

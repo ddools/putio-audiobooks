@@ -16,25 +16,40 @@
   "iconUrl": "https://putio-audiobooks.vercel.app/icons/icon-512.png",
   "maskableIconUrl": "https://putio-audiobooks.vercel.app/icons/icon-maskable-512.png",
   "splashScreenFadeOutDuration": 300,
-  "signingKey": { "path": "./android.keystore", "alias": "upload" },
-  "appVersionName": "1.1.1",
-  "appVersionCode": 2,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "upload"
+  },
+  "appVersionName": "1.4.0",
+  "appVersionCode": 3,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://putio-audiobooks.vercel.app/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
-  "alphaDependencies": { "enabled": false },
+  "alphaDependencies": {
+    "enabled": false
+  },
   "enableSiteSettingsShortcut": true,
-  "isChildDirectedTreatment": false,
-  "orientation": "default",
-  "fingerprints": [{ "name": "play app signing", "value": "9C:50:9D:23:8F:86:5F:FF:1B:00:3A:3C:75:91:06:36:C9:1E:06:E4:1D:05:E8:74:F0:1A:64:D8:FA:A3:1E:4F" }, { "name": "upload", "value": "09:0C:1A:2F:2F:CA:2D:17:AE:4C:33:E2:85:4F:F7:57:C4:FC:91:6A:97:86:84:2B:59:DD:70:38:EB:5E:1B:54" }],
-  "minSdkVersion": 24,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
   "fullScopeUrl": "https://putio-audiobooks.vercel.app/",
+  "minSdkVersion": 24,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "name": "play app signing",
+      "value": "9C:50:9D:23:8F:86:5F:FF:1B:00:3A:3C:75:91:06:36:C9:1E:06:E4:1D:05:E8:74:F0:1A:64:D8:FA:A3:1E:4F"
+    },
+    {
+      "name": "upload",
+      "value": "09:0C:1A:2F:2F:CA:2D:17:AE:4C:33:E2:85:4F:F7:57:C4:FC:91:6A:97:86:84:2B:59:DD:70:38:EB:5E:1B:54"
+    }
+  ],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "protocolHandlers": [],
   "fileHandlers": [],
   "displayOverride": [],
-  "appVersion": "1.1.1"
+  "appVersion": "1.4.0"
 }

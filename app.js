@@ -1032,17 +1032,20 @@ function setSleep(next) {
 // book.tagged marks a book whose first file has been read. A lone M4B's tags name the book; an MP3's only fill
 // in a missing author, because album tags like "Selected Poems (Gordon)" are often worse than the folder name.
 // An embedded cover is kept in the downloads cache and shown when put.io has no image of its own.
-const wantsTags = (book) => /\.(m4b|m4a|mp3)$/i.test(book.tracks[0].name) && !book.tagged && !book._tried;
+const wantsTags = (book) => /\.(m4b|m4a|mp3)$/i.test(book.tracks[0].name) && (!book.tagged || (book.tracks.length === 1 && /\.mp3$/i.test(book.tracks[0].name) && !book.id3)) && !book._tried; // lone MP3s tagged before CHAP support are read once more
 async function loadTags(book) {
   const file = book.tracks[0];
   if (!wantsTags(book)) return;
   book._tried = true;
   try {
-    const one = book.tracks.length === 1 && /\.(m4b|m4a)$/i.test(file.name);
+    const lone = book.tracks.length === 1;
+    const one = lone && /\.(m4b|m4a)$/i.test(file.name);
     const r = httpReader(await getUrl(file.id), file.size);
     const wantCover = offline.supported && !book.cover && book.art === undefined;
     const info = await (/\.mp3$/i.test(file.name) ? parseId3 : parseM4b)(r, wantCover);
     book = library.find((b) => b.id === book.id) || book; // a rescan may have swapped the object meanwhile
+    if (lone && info.chapters && !one) book.chapters = info.chapters; // an MP3's CHAP frames; its album tags still don't rename the book
+    book.id3 = true;
     if (one) {
       book.chapters = info.chapters;
       book.duration = info.duration;

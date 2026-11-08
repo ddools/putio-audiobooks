@@ -1070,6 +1070,7 @@ let lastPush = 0;
 
 function savePosition(force) {
   if (!cur || !(cur.loaded || cur.moved)) return;
+  if (cur.want && !cur.moved && now() < 1) return; // the seek to the saved spot hasn't landed: don't save 0 over it
   if (audio.ended && positions[cur.book.id]?.done) return; // finished stays finished
   const t = Date.now();
   if (!force && t - lastSave < 5000) return;
@@ -1942,6 +1943,7 @@ audio.addEventListener('loadedmetadata', () => {
   const d = Number.isFinite(audio.duration) ? audio.duration : 0;
   if (pendingFrac != null && d) audio.currentTime = pendingFrac * d;
   else if (pendingSeek > 0) audio.currentTime = d ? Math.min(pendingSeek, Math.max(0, d - 1)) : pendingSeek;
+  cur.want = pendingSeek > 1 ? audio.currentTime || pendingSeek : 0; // checked again on canplay: a huge stream can ignore the first seek
   pendingSeek = 0;
   pendingFrac = null;
   cur.loaded = true;
@@ -1949,6 +1951,10 @@ audio.addEventListener('loadedmetadata', () => {
   if (!multi() && d && !cur.book.duration) { cur.book.duration = d; saveLibrary(); }
   tick();
   updatePositionState();
+});
+audio.addEventListener('canplay', () => {
+  if (cur?.want && audio.currentTime < 1) audio.currentTime = cur.want;
+  if (cur) cur.want = 0;
 });
 audio.addEventListener('timeupdate', tick);
 audio.addEventListener('playing', () => { if (cur) cur.retries = 0; pausedAt = 0; lockState('playing'); tick(); updatePositionState(); });

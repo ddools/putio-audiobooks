@@ -956,6 +956,8 @@ function stopPlayback() {
 
 function togglePlay() {
   if (!cur) return;
+  // The timer only counts down while playing, so one that ran out while paused would stop this play at once.
+  if (sleep?.mode === 'time' && sleep.until <= Date.now()) sleep = null;
   if (!cur.started) {
     loadTrack(cur.ti, pendingSeek, true); // not startPos: a chapter picked before the first play must stick
   } else if (audio.ended && positions[cur.book.id]?.done) {
@@ -985,7 +987,9 @@ function skip(delta) {
   if (!cur) return;
   const target = now() + delta;
   const d = trackDuration();
-  if (multi() && d && target >= d && cur.ti + 1 < cur.book.tracks.length) return gotoChapter(cur.ti + 1);
+  // Past either end of a file: on into the next or previous one, placed by file size as bookFraction counts.
+  // ponytail: assumes the files share a bitrate; read the neighbour's real duration if mixed-bitrate books land off.
+  if (multi() && d && (target < 0 || target >= d)) return seekFraction(fracOf(cur.book, cur.ti, target / d));
   seekTo(target);
 }
 function gotoChapter(i) {
@@ -1066,6 +1070,7 @@ let lastPush = 0;
 
 function savePosition(force) {
   if (!cur || !(cur.loaded || cur.moved)) return;
+  if (cur.want && !cur.moved && now() < 1) return; // the seek to the saved spot hasn't landed: don't save 0 over it
   if (audio.ended && positions[cur.book.id]?.done) return; // finished stays finished
   const t = Date.now();
   if (!force && t - lastSave < 5000) return;
@@ -1424,8 +1429,9 @@ function openSpeed() {
 function openSleep() {
   sheet(t('Sleep timer'), (close) => {
     const pick = (next) => () => { setSleep(next); close(); };
+    // The end time is taken on the tap, not when the sheet opened.
     const options = [5, 10, 15, 30, 45, 60].map((m) =>
-      h('button', { class: 'chip', type: 'button', onclick: pick({ mode: 'time', until: Date.now() + m * 60000 }) }, t('{n} min', { n: m })));
+      h('button', { class: 'chip', type: 'button', onclick: () => pick({ mode: 'time', until: Date.now() + m * 60000 })() }, t('{n} min', { n: m })));
     return [
       h('div', { class: 'chips' }, options),
       h('div', { class: 'chips wide' },
@@ -1937,6 +1943,7 @@ audio.addEventListener('loadedmetadata', () => {
   const d = Number.isFinite(audio.duration) ? audio.duration : 0;
   if (pendingFrac != null && d) audio.currentTime = pendingFrac * d;
   else if (pendingSeek > 0) audio.currentTime = d ? Math.min(pendingSeek, Math.max(0, d - 1)) : pendingSeek;
+  cur.want = pendingSeek > 1 ? audio.currentTime || pendingSeek : 0; // checked again on canplay: a huge stream can ignore the first seek
   pendingSeek = 0;
   pendingFrac = null;
   cur.loaded = true;
@@ -1944,6 +1951,10 @@ audio.addEventListener('loadedmetadata', () => {
   if (!multi() && d && !cur.book.duration) { cur.book.duration = d; saveLibrary(); }
   tick();
   updatePositionState();
+});
+audio.addEventListener('canplay', () => {
+  if (cur?.want && audio.currentTime < 1) audio.currentTime = cur.want;
+  if (cur) cur.want = 0;
 });
 audio.addEventListener('timeupdate', tick);
 audio.addEventListener('playing', () => { if (cur) cur.retries = 0; pausedAt = 0; lockState('playing'); tick(); updatePositionState(); });
@@ -1996,7 +2007,8 @@ addEventListener('pagehide', () => savePosition(true));
 setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
 
 addEventListener('keydown', (e) => {
-  if (!cur || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, dialog, button, a')) return;
+  if (!cur || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea, dialog, a')) return;
+  if (e.code === 'Space' && e.target.closest('button')) return; // a focused button presses itself on Space; arrows still skip
   if (rd.open && /^(Space|ArrowUp|ArrowDown|PageUp|PageDown)$/.test(e.code)) return; // those scroll the text
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
   else if (e.code === 'ArrowLeft') e.shiftKey ? prevChapter() : skip(-settings.back);

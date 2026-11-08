@@ -187,3 +187,11 @@ export async function scan(root, listFiles, archives = []) {
   await scanFolder(root, '', 0);
   return out;
 }
+
+// A long single file with no chapters gets fixed-length parts so the scrub bar, prev/next and the sleep timer have something to work with.
+export const PART_SECS = 30 * 60;
+export function autoParts(duration, label) {
+  if (!(duration > 2 * PART_SECS)) return null; // ponytail: only past an hour, shorter files stay one chapter
+  return Array.from({ length: Math.ceil(duration / PART_SECS) }, (_, i) =>
+    ({ title: label(i + 1), start: i * PART_SECS, end: Math.min((i + 1) * PART_SECS, duration) }));
+}

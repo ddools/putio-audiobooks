@@ -77,4 +77,18 @@ const v2 = await parseId3(reader(id3(2, bytes(frame2('TAL', 3, text('Emma')), fr
 assert.deepEqual([v2.tags.album, v2.tags.artist], ['Emma', 'Jane Austen']);
 assert.deepEqual(await parseId3(reader(bytes([0xff, 0xfb, 0x90, 0x00]))), { tags: {} });
 
+// F: CHAP frames. v2.3 plain sizes with CTOC order (child order beats start order), v2.4 syncsafe sizes, an untitled chapter
+const chap = (id, a, b, sub) => frame3('CHAP', text(id), 0, u32(a), u32(b), u32(0), u32(0), sub);
+const ctoc = (...ids) => frame3('CTOC', text('toc'), 0, 3, ids.length, ...ids.flatMap((i) => [text(i), 0]));
+const c3 = await parseId3(reader(id3(3, bytes(
+  ctoc('b', 'a'), chap('a', 0, 5000, frame3('TIT2', 0, text('One'))), chap('b', 5000, 9000, frame3('TIT2', 0, text('Two')))))));
+assert.deepEqual(c3.chapters.map((c) => [c.title, c.start]), [['Two', 5], ['One', 0]]);
+const sync4 = (id, ...parts) => { const b = bytes(...parts); return bytes(text(id), syncsafe(b.length), 0, 0, b); };
+const c4 = await parseId3(reader(id3(4, bytes(
+  sync4('CHAP', text('x'), 0, u32(0), u32(1500), u32(0), u32(0), sync4('TIT2', 0, text('Intro'))),
+  sync4('CHAP', text('y'), 0, u32(1500), u32(3000), u32(0), u32(0))))));
+assert.deepEqual(c4.chapters.map((c) => [c.title, c.start, c.end]), [['Intro', 0, 1.5], ['Chapter 2', 1.5, 3]]);
+assert.equal('chapters' in await parseId3(reader(id3(3, chap('a', 0, 5000, frame3('TIT2', 0, text('Solo')))))), false);
+assert.equal('chapters' in e, false);
+
 console.log('m4b.js ok');

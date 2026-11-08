@@ -128,6 +128,7 @@ export default {
   'Speed': 'Velocidad',
   'Open player': 'Abrir reproductor',
   'No chapters': 'Sin capítulos',
+  'Part {n}': 'Parte {n}',
   '{n} of {total}': '{n} de {total}',
   'About {time} left': 'Quedan aprox. {time}',
   'Pause': 'Pausa',

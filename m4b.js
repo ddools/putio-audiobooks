@@ -286,18 +286,43 @@ export async function parseId3(r, wantCover) {
   const fh = v === 2 ? 6 : 10;
   let o = 10;
   if (head[5] & 0x40 && v > 2) { const x = await r.read(o, 4); o += v === 4 ? syncsafe(x, 0) : 4 + view(x).getUint32(0); }
+  const chap = new Map(), toc = [];
   while (o + fh <= end) {
     const f = await r.read(o, fh);
     if (!f[0]) break; // padding
     const size = v === 2 ? (f[3] << 16) | (f[4] << 8) | f[5] : v === 4 ? syncsafe(f, 4) : view(f).getUint32(4);
-    const key = ID3[ascii(f, 0, v === 2 ? 3 : 4)];
+    const name = ascii(f, 0, v === 2 ? 3 : 4);
+    if (v > 2 && (name === 'CHAP' || name === 'CTOC') && size > 8) {
+      // Only the head of a CHAP: its title comes before any chapter picture, which would cost range reads.
+      const b = await r.read(o + fh, Math.min(size, name === 'CHAP' ? 4096 : 1 << 16)), z = b.indexOf(0);
+      if (name === 'CHAP') {
+        const times = view(b.subarray(z + 1, z + 9));
+        // sub-frames (TIT2 is the title) follow the four u32s; ponytail: only TIT2, no flags or unsync handling
+        let title = '';
+        for (let p = z + 17; p + 10 <= b.length && b[p];) {
+          const n = v === 4 ? syncsafe(b, p + 4) : view(b).getUint32(p + 4);
+          if (ascii(b, p, 4) === 'TIT2') { title = id3Text(b.subarray(p + 10, p + 10 + n)); break; }
+          p += 10 + n;
+        }
+        chap.set(ascii(b, 0, z), { title, start: times.getUint32(0) / 1000, end: times.getUint32(4) / 1000 });
+      } else for (let p = z + 3, e; b[z + 2] && p < b.length && (e = b.indexOf(0, p)) >= 0; p = e + 1) {
+        toc.push(ascii(b, p, e - p));
+        if (toc.length >= b[z + 2]) break;
+      }
+    }
+    const key = ID3[name];
     if (key && !out[key] && (key === 'cover' ? wantCover && size < 8 << 20 : size < 2048)) {
       const b = await r.read(o + fh, size);
       out[key] = key === 'cover' ? id3Picture(b, v) : id3Text(b);
     }
     o += fh + size;
   }
-  return { tags: out };
+  const withTitle = (list) => list.map((c, i) => ({ ...c, title: c.title || `Chapter ${i + 1}` }));
+  let list = [...chap.values()].sort((a, b) => a.start - b.start);
+  const order = toc.map((id) => chap.get(id)).filter(Boolean);
+  if (order.length === list.length) list = order; // CTOC says the order; start times are the fallback
+  list = withTitle(list.filter((c) => Number.isFinite(c.start)));
+  return list.length > 1 ? { tags: out, chapters: list } : { tags: out };
 }
 
 /* ---------- a stretch of audio, for speech recognition ---------- */

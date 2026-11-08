@@ -1,7 +1,7 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v21';
+const CACHE = PREFIX + 'v22';
 // vendor/ has its own cache, named for the library's version, so app updates don't download it again.
 const VENDOR = 'putio-audiobooks-vendor-3.8.1';
 // Cover art from other sites, kept across app updates.
@@ -29,6 +29,12 @@ async function ranged(res, range) {
   } });
 }
 
+// Keeps the newest 300 covers; keys() lists them oldest first.
+async function trim(cache) {
+  const keys = await cache.keys();
+  await Promise.all(keys.slice(0, Math.max(0, keys.length - 300)).map((k) => cache.delete(k)));
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -45,13 +51,12 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   // Covers come from put.io, Apple and Open Library. Keep each one shown, so the art is still there offline.
-  // ponytail: never trimmed, so old picker thumbs pile up; prune it if the cache gets big.
   if (req.method === 'GET' && req.destination === 'image' && url.origin !== self.location.origin) {
     // put.io sends no CORS headers, so asking for CORS there only fails and logs an error.
     const get = () => url.hostname.endsWith('put.io') ? fetch(req)
       : fetch(req.url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' }).catch(() => fetch(req));
     e.respondWith(caches.open(COVERS).then(async (cache) => (await cache.match(req.url)) || get()
-        .then((res) => { if (res.ok || res.type === 'opaque') cache.put(req.url, res.clone()); return res; })));
+        .then((res) => { if (res.ok || res.type === 'opaque') cache.put(req.url, res.clone()).then(() => trim(cache)); return res; })));
     return;
   }
   // Downloaded books (offline.js), a range at a time, the way the player asks for them. A blob URL would hold

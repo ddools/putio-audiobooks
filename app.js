@@ -626,6 +626,7 @@ function showLibrary() {
   document.body.dataset.view = 'library';
   const search = h('input', { type: 'search', placeholder: t('Search your books'), value: query, 'aria-label': t('Search your books') });
   search.addEventListener('input', () => { query = search.value; renderLibrary(); });
+  search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { search.value = query = ''; renderLibrary(); } });
   app.replaceChildren(
     h('header', { class: 'bar' },
       h('div', { class: 'wordmark' }, h('img', { src: 'icons/icon.svg', alt: '', width: 28, height: 28 }), 'put.io Audiobooks'),
@@ -1287,6 +1288,8 @@ function tick() {
     sleepLabel = t('End of chapter');
     if (!multi() && idx > sleep.index) { sleep = null; audio.pause(); sleepLabel = ''; }
   }
+  // Fade out over the last 30s. iOS ignores volume, so there it still stops at once.
+  audio.volume = sleep?.mode === 'time' ? clamp((sleep.until - Date.now()) / 30000, 0.05, 1) : 1;
   setText(ui.sleepValue, sleepLabel || t('Sleep timer'));
   ui.sleep.classList.toggle('on', !!sleep);
 
@@ -2004,9 +2007,17 @@ document.addEventListener('visibilitychange', () => {
   else pullPositions();
 });
 addEventListener('pagehide', () => savePosition(true));
+// Back online: pick up positions from other devices, and let the next play try the stream afresh.
+addEventListener('online', () => { if (cur) cur.retries = 0; pullPositions(); });
 setInterval(() => { if (cur && sleep && !audio.paused) tick(); }, 1000);
 
 addEventListener('keydown', (e) => {
+  // "/" jumps to the library search, as on most sites.
+  if (e.key === '/' && document.body.dataset.view === 'library' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.closest('input, select, textarea, dialog')) {
+    const box = document.querySelector('.search input');
+    if (box) { e.preventDefault(); box.focus(); }
+    return;
+  }
   if (!cur || e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea, dialog, a')) return;
   if (e.code === 'Space' && e.target.closest('button')) return; // a focused button presses itself on Space; arrows still skip
   if (rd.open && /^(Space|ArrowUp|ArrowDown|PageUp|PageDown)$/.test(e.code)) return; // those scroll the text

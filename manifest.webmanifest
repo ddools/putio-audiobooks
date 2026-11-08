@@ -9,6 +9,11 @@
   "background_color": "#141414",
   "theme_color": "#141414",
   "categories": ["books", "music", "entertainment"],
+  "screenshots": [
+    { "src": "screenshots/library.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Library" },
+    { "src": "screenshots/player.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Player" },
+    { "src": "screenshots/list.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "List view" }
+  ],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },

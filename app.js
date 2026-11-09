@@ -596,6 +596,8 @@ function bookCard(book, listRow) {
   return h('div', { class: 'book' + (hidden ? ' is-hidden' : ''), 'data-book': book.id },
     h('button', { class: 'book-open', type: 'button', onclick: () => openBook(book, true) },
       coverEl(book),
+      // Over the cover's foot while it downloads; the text below already reads the percentage aloud.
+      downloads.has(book.id) ? h('span', { class: 'bar-thin dl', 'aria-hidden': 'true' }, h('i', { style: `width:${downloads.get(book.id).p * 100}%` })) : null,
       epubOf(book) ? h('span', { class: 'has-ebook', title: t('Read along'), html: icon('book') }, h('span', { class: 'sr-only' }, t('Read along'))) : null,
       h('span', { class: 'bar-thin', style: p?.done || p?.p > 0.005 ? '' : 'visibility:hidden' }, h('i', { style: `width:${p ? (p.done ? 100 : p.p * 100) : 0}%` })),
       h('span', { class: 'book-title' }, book.title),

@@ -900,6 +900,22 @@ function startPos(book) {
   return { t: trackOf(book, p), s: Math.max(0, (p.s || 0) - rewind) };
 }
 
+// The loading strip, while a book is asked to play but no sound has come yet. It waits a moment before showing,
+// so a quick start (a downloaded book) doesn't flash it.
+let loading = false, loadingTimer = 0;
+function setLoading(on) {
+  on = !!on && !!cur;
+  clearTimeout(loadingTimer);
+  if (!on) { show(false); return; }
+  if (!loading) loadingTimer = setTimeout(() => show(true), 250);
+  function show(v) {
+    loading = v;
+    document.body.classList.toggle('loading', v);
+    for (const b of [ui.play, ui.miniPlay]) b?.setAttribute('aria-busy', String(v));
+    tick(); // the button shows pause, so the wait can be cancelled
+  }
+}
+
 async function loadTrack(ti, time = 0, autoplay = false) {
   const ticket = ++loadTicket;
   const track = cur.book.tracks[ti];
@@ -911,19 +927,20 @@ async function loadTrack(ti, time = 0, autoplay = false) {
   lastGood = time;
   shownChapter = -1;
   if (autoplay) lockState('playing');
+  setLoading(autoplay);
   refreshPlayer();
 
   let url = !offline.has(track.id) && cachedUrl(track.id);
   if (!url) {
     try { url = await getUrl(track.id); }
-    catch (err) { if (ticket === loadTicket) { lockState('paused'); failed(err); } return; }
+    catch (err) { if (ticket === loadTicket) { lockState('paused'); setLoading(false); failed(err); } return; }
     if (ticket !== loadTicket) return;
   }
   audio.defaultPlaybackRate = settings.speed;
   audio.src = time > 1 ? `${url}#t=${Math.floor(time)}` : url;
   audio.playbackRate = settings.speed;
   coolDown();
-  if (autoplay) audio.play().catch(() => { if (ticket === loadTicket) lockState('paused'); });
+  if (autoplay) audio.play().catch(() => { if (ticket === loadTicket) { lockState('paused'); setLoading(false); } });
 }
 
 function openBook(book, autoplay) {
@@ -954,6 +971,7 @@ function stopPlayback() {
   audio.pause();
   audio.removeAttribute('src');
   audio.load();
+  setLoading(false);
   coolDown();
   hideReader();
   cur = null;
@@ -1969,10 +1987,13 @@ audio.addEventListener('canplay', () => {
   if (cur) cur.want = 0;
 });
 audio.addEventListener('timeupdate', tick);
-audio.addEventListener('playing', () => { if (cur) cur.retries = 0; pausedAt = 0; lockState('playing'); tick(); updatePositionState(); });
+// Buffering after a seek, or a slow connection mid-chapter, shows the strip too.
+audio.addEventListener('waiting', () => { if (!audio.paused) setLoading(true); });
+audio.addEventListener('playing', () => { setLoading(false); if (cur) cur.retries = 0; pausedAt = 0; lockState('playing'); tick(); updatePositionState(); });
 audio.addEventListener('ratechange', updatePositionState);
 audio.addEventListener('seeked', updatePositionState);
 audio.addEventListener('pause', () => {
+  setLoading(false);
   pausedAt = Date.now();
   lockState('paused');
   savePosition(true);
@@ -2003,6 +2024,7 @@ audio.addEventListener('error', () => {
     // Stream links expire and are tied to an IP address. Ask for a fresh one.
     loadTrack(cur.ti, lastGood, true);
   } else {
+    setLoading(false);
     toast(t('Couldn’t play this file. Check your connection and try again.'));
     lockState('paused');
     cur.started = false;

@@ -351,7 +351,21 @@ body.player-open, body.reader-open { overflow: hidden; }
 .p-chapter small { color: var(--muted); font-weight: 400; white-space: nowrap; }
 .p-chapter:disabled { color: var(--muted); cursor: default; }
 
-.p-scrub { display: grid; gap: 4px; }
+.p-scrub { display: grid; gap: 4px; position: relative; }
+
+/* The loading strip: a band that sweeps the player's track and the mini player's bar until sound starts. */
+.loading .p-scrub::before, .loading #mini .bar-thin::after {
+  content: ""; position: absolute; pointer-events: none;
+  background: linear-gradient(90deg, transparent 35%, var(--accent) 50%, transparent 65%) 0 0 / 300% 100%;
+  animation: load-sweep 1.4s linear infinite;
+}
+.loading .p-scrub::before { top: 11px; left: 0; right: 0; height: 6px; border-radius: 6px; }
+.loading #mini .bar-thin::after { inset: 0; }
+@keyframes load-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .loading .p-scrub::before, .loading #mini .bar-thin::after { background: var(--accent); opacity: 0.4; }
+}
+
 .p-times { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 input[type="range"] {
   -webkit-appearance: none; appearance: none;

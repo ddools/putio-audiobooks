@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 const entries = new Map();
 const cache = {
   keys: async () => [...entries.keys()].map((k) => ({ url: 'https://app.test/' + k })),
-  put: async (k, res) => { entries.set(k, { body: await res.arrayBuffer(), type: res.headers.get('Content-Type') }); },
-  match: async (k) => { const e = entries.get(k); return e && new Response(e.body, { headers: { 'Content-Type': e.type } }); },
-  delete: async (k) => entries.delete(k),
+  put: async (k, res) => { entries.set(k, { body: await res.arrayBuffer(), type: res.headers.get('Content-Type'), headers: [...res.headers] }); },
+  match: async (k) => { const e = entries.get(k); return e && new Response(e.body, { headers: e.headers }); },
+  delete: async (k) => entries.delete(k.url ? k.url.replace('https://app.test/', '') : k),
 };
 globalThis.caches = { open: async () => cache, delete: async () => entries.clear() };
 
@@ -61,6 +61,58 @@ assert.equal(offline.has(2), false);
 
 await offline.keepOnly(new Set(['99']));
 assert.equal(offline.has(1), false);
+assert.equal(entries.size, 0);
+
+// A track bigger than one part comes down in ranged parts, and a dropped part is retried.
+const { PART } = offline;
+const size = PART * 2 + 5;
+const big = { tracks: [{ id: 3, name: 'long.m4b', size }] };
+let drops = 1, asked = [];
+globalThis.fetch = async (url, init) => {
+  const [, from, to] = /bytes=(\d+)-(\d+)/.exec(init.headers.Range).map(Number);
+  asked.push(from);
+  const len = to - from + 1;
+  const drop = from === PART && drops-- > 0;
+  const body = new ReadableStream({
+    start(ctl) {
+      ctl.enqueue(new Uint8Array(Math.min(len, 1000)).fill(from / PART + 1));
+      if (drop) return ctl.error(new Error('dropped'));
+      if (len > 1000) ctl.enqueue(new Uint8Array(len - 1000).fill(from / PART + 1));
+      ctl.close();
+    },
+  });
+  return new Response(body, { status: 206 });
+};
+const realTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (fn) => realTimeout(fn, 0); // no waiting between retries here
+const progress = [];
+await offline.download(big, getUrl, (p) => progress.push(p));
+assert.deepEqual(asked, [0, PART, PART, 2 * PART]);
+assert.equal(progress.at(-1), 1);
+assert.equal(entries.get('offline/3').body.byteLength, 0); // the marker
+assert.equal(entries.get('offline/3/part-2').body.byteLength, 5);
+assert.equal(offline.has(3), true);
+const file = await offline.blob(3);
+assert.equal(file.size, size);
+assert.equal(file.type, 'audio/mp4');
+assert.deepEqual([...new Uint8Array(await file.slice(PART - 1, PART + 1).arrayBuffer())], [1, 2]);
+
+// A stopped download keeps its finished parts, and resumes from them.
+await offline.remove(big);
+assert.equal(entries.size, 0);
+drops = Infinity; asked = [];
+await assert.rejects(offline.download(big, getUrl, () => {}));
+assert.ok(entries.has('offline/3/part-0'));
+assert.equal(offline.has(3), false);
+drops = 0; asked = [];
+await offline.download(big, getUrl, () => {});
+assert.deepEqual(asked, [PART, 2 * PART]);
+globalThis.setTimeout = realTimeout;
+
+// Leftover parts of a book that left the library are cleaned up.
+entries.delete('offline/3');
+await offline.init();
+await offline.keepOnly(new Set());
 assert.equal(entries.size, 0);
 
 console.log('offline.js ok');

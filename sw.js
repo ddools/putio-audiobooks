@@ -1,7 +1,7 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v24';
+const CACHE = PREFIX + 'v25';
 // vendor/ has its own cache, named for the library's version, so app updates don't download it again.
 const VENDOR = 'putio-audiobooks-vendor-3.8.1';
 // Cover art from other sites, kept across app updates.
@@ -14,11 +14,26 @@ const SHELL = [
   'icons/apple-touch-icon.png', 'icons/connect-art.svg',
 ];
 
+// A downloaded track's file. A large one is saved in parts (offline.js); the Blob joins them without reading them.
+async function whole(url, res) {
+  const n = +res.headers.get('X-Parts');
+  if (!n) return res.blob();
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const part = await caches.match(`${url}/part-${i}`);
+    if (!part) return null;
+    parts.push(await part.blob());
+  }
+  return new Blob(parts, { type: res.headers.get('Content-Type') || '' });
+}
+
 // The part of a cached response a Range header asks for. Slicing the blob reads only that part.
-async function ranged(res, range) {
+async function ranged(res, range, url) {
   const m = /^bytes=(\d*)-(\d*)$/.exec(range || '');
-  if (!m || (!m[1] && !m[2])) return res;
-  const blob = await res.blob();
+  if ((!m || (!m[1] && !m[2])) && !res.headers.get('X-Parts')) return res;
+  const blob = await whole(url, res);
+  if (!blob) return fetch(url);
+  if (!m || (!m[1] && !m[2])) return new Response(blob, { headers: { 'Content-Type': res.headers.get('Content-Type'), 'Content-Length': String(blob.size), 'Accept-Ranges': 'bytes' } });
   const size = blob.size;
   const start = m[1] ? +m[1] : Math.max(0, size - +m[2]);
   const end = m[1] && m[2] ? Math.min(+m[2], size - 1) : size - 1;
@@ -62,7 +77,7 @@ self.addEventListener('fetch', (e) => {
   // Downloaded books (offline.js), a range at a time, the way the player asks for them. A blob URL would hold
   // the whole file in memory, which a long M4B on an iPhone may not survive.
   if (req.method === 'GET' && url.origin === self.location.origin && url.pathname.includes('/offline/')) {
-    e.respondWith(caches.match(url.href).then((res) => (res ? ranged(res, req.headers.get('range')) : fetch(req))));
+    e.respondWith(caches.match(url.href).then((res) => (res ? ranged(res, req.headers.get('range'), url.href) : fetch(req))));
     return;
   }
   // The demo's audio is too big for the shell cache; offline.js saves it when a book is downloaded.

@@ -95,7 +95,7 @@ export async function download(book, getUrl, onProgress, signal) {
         const buf = await fetchPart(t.id, i, t.size, getUrl, signal, (b) => { got += b; onProgress(Math.min(1, got / total)); });
         await cache.put(partKey(t.id, i), new Response(buf, { headers: { 'Content-Type': type } }));
       }
-      await cache.put(key(t.id), new Response(null, { headers: { 'Content-Type': type, 'X-Parts': String(n) } }));
+      await cache.put(key(t.id), new Response(null, { headers: { 'Content-Type': type, 'X-Parts': String(n), 'X-Part': String(PART), 'X-Size': String(t.size) } }));
       saved.add(String(t.id));
       continue;
     }
@@ -137,9 +137,13 @@ export async function keepOnly(ids) {
 export async function localUrl(id) {
   id = String(id);
   if (!urls.has(id)) {
-    const cache = await open();
-    const res = await cache.match(key(id));
-    const file = res && !globalThis.navigator?.serviceWorker?.controller && await whole(cache, id, res);
+    let res, file;
+    // A storage error (Safari reports "Internal error") falls back to streaming rather than stopping playback.
+    try {
+      const cache = await open();
+      res = await cache.match(key(id));
+      file = res && !globalThis.navigator?.serviceWorker?.controller && await whole(cache, id, res);
+    } catch (err) { console.warn('offline copy unreadable', err); return null; }
     if (!res || file === null) { saved.delete(id); return null; }
     // sw.js serves the file from the cache a range at a time. Without it (localhost, first visit), a blob URL.
     urls.set(id, file ? URL.createObjectURL(file) : new URL(key(id), location.href).href);

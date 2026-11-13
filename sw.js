@@ -1,7 +1,7 @@
 // Caches the app shell so the app opens instantly and offline.
 // Audio streams straight from put.io. Downloaded books live in their own cache, managed by offline.js.
 const PREFIX = 'putio-audiobooks-shell-';
-const CACHE = PREFIX + 'v25';
+const CACHE = PREFIX + 'v26';
 // vendor/ has its own cache, named for the library's version, so app updates don't download it again.
 const VENDOR = 'putio-audiobooks-vendor-3.8.1';
 // Cover art from other sites, kept across app updates.
@@ -14,26 +14,50 @@ const SHELL = [
   'icons/apple-touch-icon.png', 'icons/connect-art.svg',
 ];
 
-// A downloaded track's file. A large one is saved in parts (offline.js); the Blob joins them without reading them.
-async function whole(url, res) {
+// A large downloaded track is saved in parts (offline.js), behind a marker with an X-Parts header. Only the
+// parts a range touches are read: Safari loads a whole cached body into memory on match, so joining every part
+// of an 800 MB track for each request the player makes runs it out of memory ("Internal error").
+const MAX_PARTS = 2; // per response; the player asks again for the rest
+async function fromParts(res, range, url) {
   const n = +res.headers.get('X-Parts');
-  if (!n) return res.blob();
-  const parts = [];
-  for (let i = 0; i < n; i++) {
-    const part = await caches.match(`${url}/part-${i}`);
-    if (!part) return null;
-    parts.push(await part.blob());
+  const type = res.headers.get('Content-Type') || '';
+  const part = async (i) => { const r = await caches.match(`${url}/part-${i}`); return r && r.blob(); };
+  // Markers from before X-Size and X-Part were written: measure the first and last parts.
+  let step = +res.headers.get('X-Part'), size = +res.headers.get('X-Size');
+  if (!step || !size) {
+    const first = await part(0), last = n > 1 ? await part(n - 1) : first;
+    if (!first || !last) return null;
+    step = first.size;
+    size = (n - 1) * step + last.size;
   }
-  return new Blob(parts, { type: res.headers.get('Content-Type') || '' });
+  const m = /^bytes=(\d*)-(\d*)$/.exec(range || '');
+  if (!m || (!m[1] && !m[2])) {
+    // No range: the whole file. Players always send one, so this is rare.
+    const all = [];
+    for (let i = 0; i < n; i++) { const b = await part(i); if (!b) return null; all.push(b); }
+    return new Response(new Blob(all, { type }), { headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
+  }
+  const start = m[1] ? +m[1] : Math.max(0, size - +m[2]);
+  if (start >= size) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  const first = Math.floor(start / step);
+  const cap = Math.min(size, (first + MAX_PARTS) * step) - 1;
+  const end = Math.min(m[1] && m[2] ? +m[2] : size - 1, size - 1, cap);
+  if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  const blobs = [];
+  for (let i = first; i <= Math.floor(end / step); i++) { const b = await part(i); if (!b) return null; blobs.push(b); }
+  const body = new Blob(blobs).slice(start - first * step, end - first * step + 1, type);
+  return new Response(body, { status: 206, headers: {
+    'Content-Type': type, 'Content-Length': String(end - start + 1),
+    'Content-Range': `bytes ${start}-${end}/${size}`, 'Accept-Ranges': 'bytes',
+  } });
 }
 
 // The part of a cached response a Range header asks for. Slicing the blob reads only that part.
 async function ranged(res, range, url) {
+  if (res.headers.get('X-Parts')) return (await fromParts(res, range, url)) || new Response(null, { status: 404 });
   const m = /^bytes=(\d*)-(\d*)$/.exec(range || '');
-  if ((!m || (!m[1] && !m[2])) && !res.headers.get('X-Parts')) return res;
-  const blob = await whole(url, res);
-  if (!blob) return fetch(url);
-  if (!m || (!m[1] && !m[2])) return new Response(blob, { headers: { 'Content-Type': res.headers.get('Content-Type'), 'Content-Length': String(blob.size), 'Accept-Ranges': 'bytes' } });
+  if (!m || (!m[1] && !m[2])) return res;
+  const blob = await res.blob();
   const size = blob.size;
   const start = m[1] ? +m[1] : Math.max(0, size - +m[2]);
   const end = m[1] && m[2] ? Math.min(+m[2], size - 1) : size - 1;

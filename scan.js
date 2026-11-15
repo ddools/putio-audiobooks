@@ -179,7 +179,12 @@ export async function scan(root, listFiles, archives = []) {
       if (rest.length) out.push(makeBook('d' + folder.id, folder.name, parentName, rest, cover, epub));
       if (!rest.length && numberedParts) out.push(makeBook('d' + folder.id, folder.name, parentName, m4bs, cover, epub));
       else if (!rest.length && m4bs.length === 1 && !shelf) out.push(makeBook('f' + m4bs[0].id, folder.name, parentName, m4bs, cover, epub));
-      else for (const f of m4bs) out.push(makeBook('f' + f.id, f.name, folder.name, [f], cover, pickEpub(epubs, f.name, false)));
+      else {
+        // M4Bs that tidy to the same title ("Season 2 (Part 1)", "Season 2 (Part 2)") are parts of one book.
+        const groups = new Map();
+        for (const f of m4bs) groups.set(tidy(f.name), [...(groups.get(tidy(f.name)) || []), f]);
+        for (const g of groups.values()) out.push(makeBook('f' + g[0].id, g[0].name, folder.name, g, cover, pickEpub(epubs, g[0].name, false)));
+      }
     }
     return shelf || tracks.length > 0;
   }
